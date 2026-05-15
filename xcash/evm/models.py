@@ -22,6 +22,7 @@ from common.models import UndeletableModel
 from evm.choices import TxKind
 from evm.constants import EVM_PIPELINE_DEPTH
 from evm.intents import assert_transfer_type_implemented
+from evm.intents import get_preflight_buffer_multiplier
 
 if TYPE_CHECKING:
     from currencies.models import Crypto
@@ -199,16 +200,14 @@ class EvmBroadcastTask(UndeletableModel):
 
     def _passes_balance_preflight(self) -> bool:
         # pre-flight 第 1 步：主动阈值检查。
-        # 用 *当前* gas_price（不是本任务签名时锁定的 self.gas_price）估算单次
-        # ERC-20 转账 gas 成本，再按 value + 2 * erc20_gas_cost 作为预算阈值：
-        # - ERC-20 归集：value=0 → 阈值 = 2 * erc20_gas_cost，保留一次重试冗余。
-        # - 原生币归集：阈值 = value + 2 * erc20_gas_cost，预留两次 gas 波动空间。
-        # 这里刻意用 erc20_transfer_gas（而非 base_transfer_gas）给出更高的安全垫，
-        # 避免归集链路在 gas 跳涨时被节点反复拒绝。
+        # buffer_required = value + N * task.gas * current_gas_price。
+        # N 由 tx_kind 派发表控制；task.gas 是 schedule 时按具体交易形态
+        # 已经确定的 gas limit，避免原生转账和合约调用都套用 ERC-20 上限。
         current_native_balance = self.chain.w3.eth.get_balance(self.address.address)  # noqa: SLF001
         current_gas_price = self.chain.w3.eth.gas_price  # noqa: SLF001
+        multiplier = get_preflight_buffer_multiplier(TxKind(self.tx_kind))
         erc20_gas_cost = current_gas_price * self.chain.erc20_transfer_gas
-        buffer_required = int(self.value) + 2 * erc20_gas_cost
+        buffer_required = int(self.value) + multiplier * self.gas * current_gas_price
         if current_native_balance < buffer_required:
             # 仅归集场景补 gas；Withdrawal 的 address 是 Vault 本身，补 gas 无意义，
             # 保持 QUEUED 静默返回，等运营向 Vault 注资即可。
