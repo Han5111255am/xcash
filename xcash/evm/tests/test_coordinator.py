@@ -16,6 +16,7 @@ from unittest.mock import Mock
 from unittest.mock import PropertyMock
 from unittest.mock import patch
 
+import eth_abi
 from django.test import TestCase
 from django.utils import timezone
 from web3 import Web3
@@ -48,6 +49,16 @@ _SENDER_HEX = Web3.to_checksum_address("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 _RECEIVER_HEX = Web3.to_checksum_address("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 _VAULT_HEX = Web3.to_checksum_address("0xcccccccccccccccccccccccccccccccccccccccc")
 _CONTRACT_HEX = Web3.to_checksum_address("0xdddddddddddddddddddddddddddddddddddddddd")
+_ERC20_TRANSFER_SELECTOR = "0xa9059cbb"
+
+
+def _make_erc20_transfer_calldata(
+    *,
+    to_hex: str = _RECEIVER_HEX,
+    value_int: int = 100_000_000,
+) -> str:
+    encoded_args = eth_abi.encode(["address", "uint256"], [to_hex, value_int]).hex()
+    return f"{_ERC20_TRANSFER_SELECTOR}{encoded_args}"
 
 
 def _make_erc20_transfer_log(
@@ -321,7 +332,7 @@ class ObserveConfirmedErc20Test(TestCase):
             value=Decimal("0"),
             nonce=0,
             gas=100000,
-            data="0xa9059cbb",
+            data=_make_erc20_transfer_calldata(),
             tx_kind=TxKind.CONTRACT_CALL,
         )
 
@@ -474,7 +485,7 @@ class CoordinatorIntegrationTest(TestCase):
             nonce=0,
             to=_CONTRACT_HEX,
             value=0,
-            data="0xa9059cbb",
+            data=_make_erc20_transfer_calldata(),
             gas=60000,
             tx_kind=TxKind.CONTRACT_CALL,
             gas_price=1,

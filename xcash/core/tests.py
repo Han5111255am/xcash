@@ -522,6 +522,7 @@ class LocalChainIntegrationMixin:
         chain: Chain,
         tx_hash,
         expected_scanner: str,
+        require_created: bool = True,
     ) -> OnchainTransfer:
         """使用真实自扫描器从链上抓取交易，再返回命中的 OnchainTransfer。
 
@@ -579,7 +580,8 @@ class LocalChainIntegrationMixin:
             self.assertEqual(transfer.event_id, "native:tx")
         elif expected_scanner == "erc20":
             self.assertGreaterEqual(summary.erc20.observed_logs, 1)
-            self.assertGreaterEqual(summary.erc20.created_transfers, 1)
+            if require_created:
+                self.assertGreaterEqual(summary.erc20.created_transfers, 1)
             self.assertTrue(transfer.event_id.startswith("erc20:"))
         else:
             raise ValueError(f"Unsupported expected_scanner: {expected_scanner}")
@@ -1251,6 +1253,7 @@ class LocalEvmScannerIntegrationTests(LocalChainIntegrationMixin, TestCase):
             chain=chain,
             tx_hash=collection_hash,
             expected_scanner="erc20",
+            require_created=False,
         )
         collection_transfer.process()
         deposit.refresh_from_db()

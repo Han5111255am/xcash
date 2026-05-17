@@ -2977,11 +2977,18 @@ class DepositCollectionAnvilTests(TestCase):
             action_type=intent.action_type,
             tx_hash=tx_hash,
         )
+        task_address = address if isinstance(address, Address) else self.deposit_addr_obj
+        last_nonce = (
+            EvmBroadcastTask.objects.filter(address=task_address, chain=chain)
+            .order_by("-nonce")
+            .values_list("nonce", flat=True)
+            .first()
+        )
         EvmBroadcastTask.objects.create(
             base_task=base_task,
-            address=address if isinstance(address, Address) else self.deposit_addr_obj,
+            address=task_address,
             chain=chain,
-            nonce=0,
+            nonce=0 if last_nonce is None else last_nonce + 1,
             to=intent.to,
             value=intent.value,
             data=intent.data,
