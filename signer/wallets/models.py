@@ -10,9 +10,6 @@ from bip_utils import Bip39WordsNum
 from bip_utils import Bip44
 from bip_utils import Bip44Changes
 from bip_utils import Bip44Coins
-from bip_utils import Bip84
-from bip_utils import Bip84Coins
-from bitcoin_support.network import get_active_bitcoin_network
 
 if TYPE_CHECKING:
     from bip_utils.bip.bip44_base import Bip44Base
@@ -25,7 +22,6 @@ from wallets.crypto import AESCipher
 
 class ChainType(models.TextChoices):
     EVM = "evm", "EVM"
-    BITCOIN = "btc", "Bitcoin"
 
 
 class SignerWallet(models.Model):
@@ -85,32 +81,20 @@ class SignerWallet(models.Model):
     def get_bip_coin_of_chain(chain_type: str) -> Bip44Coins:
         if chain_type == ChainType.EVM:
             return Bip44Coins.ETHEREUM
-        if chain_type == ChainType.BITCOIN:
-            return get_active_bitcoin_network().bip44_coin
         raise NotImplementedError(f"unsupported chain_type={chain_type}")
-
-    @staticmethod
-    def get_bip84_coin_of_chain(chain_type: str) -> Bip84Coins:
-        if chain_type == ChainType.BITCOIN:
-            return get_active_bitcoin_network().bip84_coin
-        raise NotImplementedError(f"BIP84 不支持 chain_type={chain_type}")
 
     def _get_bip44_leaf_ctx(
         self, chain_type: str, *, bip44_account: int, address_index: int
     ) -> Bip44Base:
-        """派生 HD 钱包叶子节点，根据链类型选择不同的 BIP 标准。
+        """派生 HD 钱包叶子节点。
 
         - EVM：BIP44 路径 m/44'/60'/account'/0/index
-        - Bitcoin：BIP84 路径 m/84'/coin'/account'/0/index（Native SegWit / P2WPKH）
 
         bip44_account 区分用途（0=Deposit, 1=Vault），address_index 为该用途下的地址序号。
         change 固定为 external（0），与标准 HD 钱包兼容。
         """
         seed_bytes = Bip39SeedGenerator(self.mnemonic).Generate()
-        if chain_type == ChainType.BITCOIN:
-            bip_obj = Bip84.FromSeed(seed_bytes, self.get_bip84_coin_of_chain(chain_type))
-        else:
-            bip_obj = Bip44.FromSeed(seed_bytes, self.get_bip_coin_of_chain(chain_type))
+        bip_obj = Bip44.FromSeed(seed_bytes, self.get_bip_coin_of_chain(chain_type))
         return (
             bip_obj
             .Purpose()

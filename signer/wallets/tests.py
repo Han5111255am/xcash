@@ -467,9 +467,9 @@ class SignerInternalAdminSummaryTests(TestCase):
         )
         SignerRequestAudit.objects.create(
             request_id="audit-failed",
-            endpoint="/v1/sign/bitcoin",
+            endpoint="/v1/sign/evm",
             wallet_id=4002,
-            chain_type=ChainType.BITCOIN,
+            chain_type=ChainType.EVM,
             bip44_account=0,
             address_index=1,
             status=SignerRequestAudit.Status.FAILED,
