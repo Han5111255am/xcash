@@ -539,7 +539,7 @@ class EvmBroadcastTask(UndeletableModel):
         assert_action_type_implemented(intent.action_type)
 
         with db_transaction.atomic():
-            state = AddressChainState.acquire_for_update(
+            AddressChainState.acquire_for_update(
                 address=intent.address,
                 chain=intent.chain,
             )
@@ -548,7 +548,7 @@ class EvmBroadcastTask(UndeletableModel):
             if intent.verify_fn is not None:
                 intent.verify_fn()
 
-            nonce = cls._next_nonce(intent.address, intent.chain, state=state)
+            nonce = cls._next_nonce(intent.address, intent.chain)
             base_task = BroadcastTask.objects.create(
                 chain=intent.chain,
                 address=intent.address,
@@ -557,7 +557,7 @@ class EvmBroadcastTask(UndeletableModel):
                 result=BroadcastTaskResult.UNKNOWN,
             )
 
-            broadcast_task = EvmBroadcastTask.objects.create(
+            return EvmBroadcastTask.objects.create(
                 base_task=base_task,
                 address=intent.address,
                 chain=intent.chain,
@@ -568,31 +568,20 @@ class EvmBroadcastTask(UndeletableModel):
                 gas=intent.gas,
                 tx_kind=intent.tx_kind,
             )
-            state.next_nonce = nonce + 1
-            state.save()
-            return broadcast_task
 
     @staticmethod
-    def _next_nonce(address, chain, *, state: AddressChainState) -> int:
+    def _next_nonce(address, chain) -> int:
         """为 (address, chain) 维度分配严格递增的下一个 nonce。
 
         调用方必须已通过 AddressChainState.acquire_for_update() 持有行锁，
-        并将锁定的 state 实例传入，确保 nonce 分配在串行化保护下进行。
+        确保基于 EvmBroadcastTask 推导 nonce 与创建任务处于同一串行化区间。
         """
         latest_nonce = (
             EvmBroadcastTask.objects.filter(address=address, chain=chain)
             .aggregate(max_nonce=models.Max("nonce"))
             .get("max_nonce")
         )
-        derived_next_nonce = 0 if latest_nonce is None else int(latest_nonce) + 1
-        if state.next_nonce is None:
-            next_nonce = derived_next_nonce
-        else:
-            next_nonce = max(int(state.next_nonce), derived_next_nonce)
-        if state.next_nonce != next_nonce:
-            state.next_nonce = next_nonce
-            state.save()
-        return next_nonce
+        return 0 if latest_nonce is None else int(latest_nonce) + 1
 
 
 class X402FacilitationStatus(models.TextChoices):

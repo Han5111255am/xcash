@@ -617,7 +617,6 @@ class AddressChainStateAcquireTests(TestCase):
         existing_state = AddressChainState.objects.create(
             address=self.address,
             chain=self.chain,
-            next_nonce=3,
         )
 
         def fake_get_or_create(**_kwargs):
@@ -632,7 +631,8 @@ class AddressChainStateAcquireTests(TestCase):
             )
 
         self.assertEqual(state.pk, existing_state.pk)
-        self.assertEqual(state.next_nonce, 3)
+        self.assertEqual(state.address, self.address)
+        self.assertEqual(state.chain, self.chain)
 
     def test_acquire_for_update_raises_doesnotexist_when_state_truly_absent(self):
         # IntegrityError 后 state 确实不存在时（非身份冲突的其他约束错误），

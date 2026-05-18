@@ -12,7 +12,6 @@ from web3.exceptions import ContractLogicError
 from web3.exceptions import TransactionNotFound
 
 from chains.models import Address
-from chains.models import AddressChainState
 from chains.models import AddressUsage
 from chains.models import BroadcastTask
 from chains.models import BroadcastTaskResult
@@ -205,10 +204,8 @@ class EvmBroadcastTaskTests(TestCase):
             address="0x0000000000000000000000000000000000000F01",
         )
 
-        state = AddressChainState.acquire_for_update(address=addr, chain=chain)
-
         # 无任何任务时 nonce 应从 0 开始
-        self.assertEqual(EvmBroadcastTask._next_nonce(addr, chain, state=state), 0)
+        self.assertEqual(EvmBroadcastTask._next_nonce(addr, chain), 0)
 
         # 创建一个任务后 nonce 应为 1
         base_task = BroadcastTask.objects.create(
@@ -230,8 +227,7 @@ class EvmBroadcastTaskTests(TestCase):
             gas_price=1,
             signed_payload="0x00",
         )
-        state.refresh_from_db()
-        self.assertEqual(EvmBroadcastTask._next_nonce(addr, chain, state=state), 1)
+        self.assertEqual(EvmBroadcastTask._next_nonce(addr, chain), 1)
 
     def test_broadcast_records_last_attempt_without_marking_completion(self):
         # EVM 主执行对象只记录发送尝试；是否上链由统一父任务状态推进。

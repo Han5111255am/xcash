@@ -100,7 +100,8 @@ class EvmNonceConcurrencyTests(TransactionTestCase):
         state = AddressChainState.objects.get(
             address=self.address, chain=self.chain
         )
-        self.assertEqual(state.next_nonce, self.THREAD_COUNT)
+        self.assertEqual(state.address, self.address)
+        self.assertEqual(state.chain, self.chain)
         self.assertEqual(
             EvmBroadcastTask.objects.filter(
                 address=self.address, chain=self.chain
@@ -235,13 +236,14 @@ class EvmNonceConcurrencyTests(TransactionTestCase):
         ).count()
         self.assertEqual(db_count, task_count)
 
-        # AddressChainState.next_nonce 正确推进
+        # AddressChainState 只负责行锁，nonce 进度由 EvmBroadcastTask 记录推导。
         from chains.models import AddressChainState
 
         state = AddressChainState.objects.get(
             address=self.address, chain=self.chain
         )
-        self.assertEqual(state.next_nonce, task_count)
+        self.assertEqual(state.address, self.address)
+        self.assertEqual(state.chain, self.chain)
 
         # 数据库层面无空洞：max(nonce) == count - 1
         from django.db.models import Max

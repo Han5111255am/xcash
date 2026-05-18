@@ -96,7 +96,8 @@ class EvmBroadcastTaskScheduleTests(TestCase):
         self.assertEqual(base_task.result, BroadcastTaskResult.UNKNOWN)
 
         state = AddressChainState.objects.get(address=self.address, chain=self.chain)
-        self.assertEqual(state.next_nonce, 1)
+        self.assertEqual(state.address, self.address)
+        self.assertEqual(state.chain, self.chain)
 
     def test_schedule_runs_verify_fn_inside_lock_before_nonce_allocation(self):
         events = []
@@ -109,7 +110,7 @@ class EvmBroadcastTaskScheduleTests(TestCase):
         def verify():
             events.append("verify")
 
-        def next_nonce(address, chain, *, state):
+        def next_nonce(address, chain):
             events.append("nonce")
             return 0
 
@@ -128,7 +129,8 @@ class EvmBroadcastTaskScheduleTests(TestCase):
         self.assertEqual(events, ["lock", "verify", "nonce"])
         self.assertEqual(task.nonce, 0)
         state = AddressChainState.objects.get(address=self.address, chain=self.chain)
-        self.assertEqual(state.next_nonce, 1)
+        self.assertEqual(state.address, self.address)
+        self.assertEqual(state.chain, self.chain)
 
     def test_schedule_rolls_back_when_verify_fn_raises(self):
         def reject():

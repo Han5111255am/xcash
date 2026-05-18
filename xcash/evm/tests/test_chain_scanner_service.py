@@ -569,7 +569,7 @@ class EvmChainScannerServiceTests(TestCase):
         chain.__dict__["w3"] = SimpleNamespace(eth=EthClient())
         acquire_state_mock.side_effect = lambda **kwargs: (
             order.append("lock"),
-            SimpleNamespace(next_nonce=0, save=Mock()),
+            SimpleNamespace(),
         )[1]
 
         EvmBroadcastTask.schedule(

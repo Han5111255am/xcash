@@ -287,10 +287,7 @@ class AddressUsage(models.TextChoices):
 
 
 class AddressChainState(models.Model):
-    """按 (address, chain) 维护串行化状态。
-
-    - EVM: `next_nonce` 表示下一笔待分配的 nonce
-    """
+    """按 (address, chain) 维护串行化状态。"""
 
     address = models.ForeignKey(
         "Address",
@@ -303,11 +300,6 @@ class AddressChainState(models.Model):
         on_delete=models.CASCADE,
         related_name="address_states",
         verbose_name=_("链"),
-    )
-    next_nonce = models.PositiveBigIntegerField(
-        _("下一个 nonce"),
-        blank=True,
-        null=True,
     )
     created_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
     updated_at = models.DateTimeField(_("更新时间"), auto_now=True)
