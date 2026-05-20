@@ -46,7 +46,7 @@ class X402FacilitationService:
         )
 
         existing = (
-            X402Facilitation.objects.select_for_update()
+            X402Facilitation.objects.select_for_update(of=("self",))
             .filter(
                 chain=chain,
                 crypto=crypto,
