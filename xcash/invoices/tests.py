@@ -2134,3 +2134,76 @@ class TriggerContractCollectionTest(TestCase, InvoiceTestMixin):
                 + self.crypto.symbol.encode()
             )[:32],
         )
+
+
+class ConfirmInvoiceContractHookTest(TestCase, InvoiceTestMixin):
+    def setUp(self):
+        self.setup_base_fixtures(
+            username="contract-confirm-merchant",
+            project_name="ContractConfirmProject",
+            crypto_symbol="USDTCON",
+            chain_code="eth-contract-confirm",
+            chain_id=8807,
+        )
+
+    def _make_confirming_invoice(self, *, billing_mode: str, out_no: str) -> Invoice:
+        invoice = self.create_test_invoice(
+            out_no=out_no,
+            billing_mode=billing_mode,
+            amount=Decimal("100"),
+            status=InvoiceStatus.CONFIRMING,
+        )
+        transfer = OnchainTransfer.objects.create(
+            chain=self.chain,
+            block=1,
+            hash=f"0x{self.chain.chain_id:08x}{invoice.pk:056x}",
+            event_id=f"ci-{invoice.pk}",
+            crypto=self.crypto,
+            from_address=Web3.to_checksum_address(
+                "0x00000000000000000000000000000000000000b3"
+            ),
+            to_address=self.recipient_address,
+            value=Decimal("10000000000"),
+            amount=Decimal("100"),
+            timestamp=int(timezone.now().timestamp()),
+            datetime=timezone.now(),
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(
+            crypto=self.crypto,
+            chain=self.chain,
+            transfer=transfer,
+        )
+        invoice.refresh_from_db()
+        return invoice
+
+    @patch("invoices.tasks.deploy_contract_collection.delay")
+    def test_completed_contract_invoice_triggers_deploy_task(self, mock_delay):
+        invoice = self._make_confirming_invoice(
+            billing_mode=InvoiceBillingMode.CONTRACT,
+            out_no="contract-confirm-order",
+        )
+
+        with (
+            patch("invoices.service.WebhookService.create_event"),
+            patch("invoices.service.send_internal_callback"),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            InvoiceService.confirm_invoice(invoice)
+
+        mock_delay.assert_called_once_with(invoice.pk)
+
+    @patch("invoices.tasks.deploy_contract_collection.delay")
+    def test_completed_differ_invoice_does_not_trigger_deploy_task(self, mock_delay):
+        invoice = self._make_confirming_invoice(
+            billing_mode=InvoiceBillingMode.DIFFER,
+            out_no="differ-confirm-order",
+        )
+
+        with (
+            patch("invoices.service.WebhookService.create_event"),
+            patch("invoices.service.send_internal_callback"),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            InvoiceService.confirm_invoice(invoice)
+
+        mock_delay.assert_not_called()

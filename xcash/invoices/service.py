@@ -316,6 +316,10 @@ class InvoiceService:
             worth=str(invoice.worth),
             currency=invoice.crypto.symbol,
         )
+        if invoice.billing_mode == InvoiceBillingMode.CONTRACT:
+            from .tasks import deploy_contract_collection
+
+            transaction.on_commit(lambda: deploy_contract_collection.delay(invoice.pk))
 
     @classmethod
     @transaction.atomic

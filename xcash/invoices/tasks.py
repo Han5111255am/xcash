@@ -93,3 +93,13 @@ def fallback_invoice_expired():
             discarded_at=now,
             updated_at=now,
         )
+
+
+@shared_task
+def deploy_contract_collection(invoice_id: int):
+    """异步触发合约账单 collector 部署与归集。"""
+    try:
+        invoice = Invoice.objects.get(pk=invoice_id)
+    except Invoice.DoesNotExist:
+        return
+    invoice.trigger_contract_collection()
