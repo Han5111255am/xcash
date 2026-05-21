@@ -70,6 +70,15 @@ class ErrorCode(Enum):
     NO_AVAILABLE_METHOD = ErrorInfo("5010", _("无效的支付方式"), 400)
     INVOICE_NOT_EXIST = ErrorInfo("5011", _("账单不存在"), 400)
     INVOICE_EXPIRED = ErrorInfo("5012", _("账单已过期"), 400)
+    CONTRACT_BILLING_REQUIRES_NATIVE_SCANNER = ErrorInfo(
+        "5013", _("合约账单要求平台开启 EVM 原生币扫描"), 400
+    )
+    CONTRACT_BILLING_EVM_ONLY = ErrorInfo(
+        "5014", _("合约账单仅支持 EVM 链"), 400
+    )
+    CONTRACT_BILLING_FACTORY_NOT_CONFIGURED = ErrorInfo(
+        "5015", _("合约账单要求该链已配置 CREATE2 工厂地址"), 400
+    )
 
     # Internal API
     INVALID_INTERNAL_TOKEN = ErrorInfo("6000", _("内部API令牌无效"), 401)
