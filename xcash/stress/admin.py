@@ -25,6 +25,7 @@ class InvoiceStressCaseInline(TabularInline):
     fields = (
         "sequence",
         "status",
+        "billing_mode",
         "crypto",
         "chain",
         "invoice_sys_no",
@@ -33,6 +34,7 @@ class InvoiceStressCaseInline(TabularInline):
         "webhook_payload_ok",
         "webhook_nonce_ok",
         "webhook_timestamp_ok",
+        "collection_verified",
         "error",
     )
     readonly_fields = fields
@@ -245,6 +247,7 @@ class StressRunAdmin(ModelAdmin):
             ("api_select_method_ms", "invoice_created_at", "api_done_at"),
             ("chain_pay_ms", "api_done_at", "chain_paid_at"),
             ("webhook_wait_ms", "chain_paid_at", "webhook_received_at"),
+            ("collection_wait_ms", "webhook_received_at", "collection_done_at"),
             ("total_ms", "started_at", "finished_at"),
         ]
         withdrawal_stages = [
@@ -388,6 +391,7 @@ class InvoiceStressCaseAdmin(ModelAdmin):
         "stress_run",
         "sequence",
         "status",
+        "billing_mode",
         "crypto",
         "chain",
         "invoice_sys_no",
@@ -397,8 +401,9 @@ class InvoiceStressCaseAdmin(ModelAdmin):
         "webhook_payload_ok",
         "webhook_nonce_ok",
         "webhook_timestamp_ok",
+        "collection_verified",
     )
-    list_filter = ("stress_run", "status")
+    list_filter = ("stress_run", "status", "billing_mode")
     search_fields = ("invoice_sys_no", "invoice_out_no", "tx_hash")
 
     def has_add_permission(self, request):
