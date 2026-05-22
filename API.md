@@ -227,6 +227,7 @@ const headers = {
 | `amount` | string | 是 | 金额，范围 0.00000001 ~ 1000000 |
 | `duration` | integer | 否 | 支付有效期（分钟），范围 5~30，默认 10 |
 | `methods` | object | 否 | 限定支付方式，格式 `{"币种": ["链码"]}` |
+| `billing_mode` | string | 否 | 账单计费模式：`differ` 差额账单（默认） / `contract` 合约账单 |
 | `notify_url` | string | 否 | 账单级异步通知地址，覆盖项目 Webhook URL，仅作用于本账单；为空时回退到项目配置 |
 | `return_url` | string | 否 | 支付完成后同步跳转地址 |
 
@@ -235,6 +236,18 @@ const headers = {
 - 不传：使用项目已配置的全部支付方式
 - 指定：仅允许指定的币种+链组合，如 `{"USDT": ["ethereum-mainnet", "tron-mainnet"], "ETH": ["ethereum-mainnet"]}`
 - 当 `currency` 为加密货币时，`methods` 会被自动限定为该币种
+
+**billing_mode 说明：**
+
+- `differ`：默认模式，通过收款地址和微小金额差额识别账单，支持全部已启用的账单支付链。
+- `contract`：EVM 合约账单模式，通过 CREATE2 为账单预测独立 collector 收款地址。买家付款到该地址后，系统按独立地址匹配账单；实际到账金额不低于 `pay_amount` 即可匹配。账单完成后，系统会自动部署 collector 将资金归集到项目收款地址。
+
+合约账单只支持 EVM 链。启用前必须先在管理后台 **系统 -> 平台参数** 中开启 **开启 EVM 原生币扫描**，并满足以下要求：
+
+- 请求中的所有 `methods` 都是 EVM 链。
+- 每条 EVM 链已配置 CREATE2 工厂地址。
+- 项目已配置 EVM 类型、用途为账单收款的收款地址。
+- 账单完成后的 collector 部署/归集需要项目钱包具备足够 Gas。
 
 ### 请求示例
 
@@ -249,6 +262,24 @@ const headers = {
     "USDT": ["ethereum-mainnet", "tron-mainnet"],
     "ETH": ["ethereum-mainnet"]
   },
+  "notify_url": "https://example.com/payment/notify",
+  "return_url": "https://example.com/payment/success"
+}
+```
+
+### 合约账单请求示例
+
+```json
+{
+  "out_no": "order-20240101-002",
+  "title": "Premium Plan",
+  "currency": "USDT",
+  "amount": "100",
+  "duration": 15,
+  "methods": {
+    "USDT": ["ethereum-mainnet", "base-mainnet"]
+  },
+  "billing_mode": "contract",
   "notify_url": "https://example.com/payment/notify",
   "return_url": "https://example.com/payment/success"
 }
@@ -285,6 +316,8 @@ const headers = {
 ```
 
 创建后 `chain`、`crypto`、`pay_address`、`pay_amount` 为空，需要买家选择支付方式后才会分配。
+
+合约账单的 API 流程与普通账单相同：仍然先创建账单，再通过支付页或 `/v1/invoice/{sys_no}/select-method` 选择币种和链。选择成功后返回的 `pay_address` 是该账单在所选 EVM 链上的独立 collector 地址；买家按页面展示的 `pay_amount` 向该地址付款即可。公开查询和创建响应当前不单独返回 `billing_mode`，商户侧应以创建请求中保存的模式为准。
 
 ### 限流
 
@@ -792,6 +825,9 @@ signature = HMAC-SHA256(message, hmac_key).hexdigest()
 | 5010 | 无效的支付方式 | 400 |
 | 5011 | 账单不存在 | 400 |
 | 5012 | 账单已过期 | 400 |
+| 5013 | 合约账单要求平台开启 EVM 原生币扫描 | 400 |
+| 5014 | 合约账单仅支持 EVM 链 | 400 |
+| 5015 | 合约账单要求该链已配置 CREATE2 工厂地址 | 400 |
 
 ---
 
@@ -815,6 +851,8 @@ signature = HMAC-SHA256(message, hmac_key).hexdigest()
     |<-- Webhook: invoice ---------|                              |
     |-- 响应 "ok" ---------------->|                              |
 ```
+
+> 使用 `billing_mode=contract` 时，买家侧流程不变；区别是 `pay_address` 为账单独立 collector 地址。账单完成后，Xcash 会异步部署 collector 并把该地址收到的资产归集到项目收款地址。
 
 ### 充币（Deposit）
 
