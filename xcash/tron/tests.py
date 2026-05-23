@@ -438,7 +438,6 @@ class TronWatchCursorAdminTests(TestCase):
             chain=self.chain,
             contract_address="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
             last_scanned_block=11,
-            last_safe_block=11,
             last_error="old error",
             last_error_at=timezone.now(),
         )
@@ -446,7 +445,6 @@ class TronWatchCursorAdminTests(TestCase):
             chain=self.chain,
             contract_address="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
             last_scanned_block=9,
-            last_safe_block=9,
             enabled=False,
         )
         self.admin = TronWatchCursorAdmin(TronWatchCursor, AdminSite())
@@ -474,7 +472,6 @@ class TronWatchCursorAdminTests(TestCase):
         self.chain.refresh_from_db()
 
         self.assertEqual(self.cursor.last_scanned_block, 88)
-        self.assertEqual(self.cursor.last_safe_block, 88)
         self.assertEqual(self.cursor.last_error, "")
         self.assertIsNone(self.cursor.last_error_at)
         self.assertEqual(self.other_cursor.last_scanned_block, 9)
@@ -502,7 +499,6 @@ class TronWatchCursorAdminTests(TestCase):
         self.chain.refresh_from_db()
 
         self.assertEqual(self.cursor.last_scanned_block, 11)
-        self.assertEqual(self.cursor.last_safe_block, 11)
         self.assertEqual(self.cursor.last_error, "old error")
         self.assertEqual(self.chain.latest_block_number, 66)
         self.admin.message_user.assert_called_once()
@@ -600,7 +596,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             chain=self.chain,
             contract_address=self.usdt_mapping.address,
             last_scanned_block=last_scanned_block,
-            last_safe_block=last_scanned_block,
         )
 
     @override_settings(DEBUG=False)
@@ -624,7 +619,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123456)
-        self.assertEqual(cursor.last_safe_block, 123456)
 
     @override_settings(DEBUG=False)
     @patch("tron.scanner.TronHttpClient")
@@ -692,7 +686,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 0)
-        self.assertEqual(cursor.last_safe_block, 0)
         self.assertEqual(cursor.last_error, "latest failed")
         self.assertIsNotNone(cursor.last_error_at)
 
@@ -733,7 +726,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123456)
-        self.assertEqual(cursor.last_safe_block, 123456)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -768,7 +760,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123456)
-        self.assertEqual(cursor.last_safe_block, 123456)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -797,7 +788,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123455)
-        self.assertEqual(cursor.last_safe_block, 123455)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -824,7 +814,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123455)
-        self.assertEqual(cursor.last_safe_block, 123455)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -854,7 +843,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123455)
-        self.assertEqual(cursor.last_safe_block, 123455)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -887,7 +875,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123456)
-        self.assertEqual(cursor.last_safe_block, 123456)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -938,7 +925,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123455)
-        self.assertEqual(cursor.last_safe_block, 123455)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -975,7 +961,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123455)
-        self.assertEqual(cursor.last_safe_block, 123455)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
@@ -1167,7 +1152,6 @@ class TronUsdtPaymentScannerTests(TestCase):
             contract_address=self.usdt_mapping.address,
         )
         self.assertEqual(cursor.last_scanned_block, 123456)
-        self.assertEqual(cursor.last_safe_block, 123456)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronUsdtPaymentScanner._advance_cursor")
@@ -1240,7 +1224,6 @@ class TronUsdtPaymentScannerTests(TestCase):
         stale_cursor = TronWatchCursor.objects.get(pk=cursor.pk)
         TronWatchCursor.objects.filter(pk=cursor.pk).update(
             last_scanned_block=150,
-            last_safe_block=150,
         )
 
         TronUsdtPaymentScanner._advance_cursor(
@@ -1251,7 +1234,6 @@ class TronUsdtPaymentScannerTests(TestCase):
 
         cursor.refresh_from_db()
         self.assertEqual(cursor.last_scanned_block, 150)
-        self.assertEqual(cursor.last_safe_block, 150)
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")

@@ -163,7 +163,6 @@ class TronUsdtPaymentScanner:
                 contract_address=contract_address,
                 defaults={
                     "last_scanned_block": 0,
-                    "last_safe_block": 0,
                     "enabled": True,
                 },
             )
@@ -191,13 +190,11 @@ class TronUsdtPaymentScanner:
 
         TronWatchCursor.objects.filter(pk=cursor.pk).update(
             last_scanned_block=latest_block,
-            last_safe_block=latest_block,
             last_error="",
             last_error_at=None,
             updated_at=timezone.now(),
         )
         cursor.last_scanned_block = latest_block
-        cursor.last_safe_block = latest_block
         cursor.last_error = ""
         cursor.last_error_at = None
         return cursor
@@ -362,13 +359,11 @@ class TronUsdtPaymentScanner:
         target_block = min(scanned_block, latest_block)
         TronWatchCursor.objects.filter(pk=cursor.pk).update(
             last_scanned_block=Greatest(F("last_scanned_block"), target_block),
-            last_safe_block=Greatest(F("last_safe_block"), target_block),
             last_error="",
             last_error_at=None,
             updated_at=timezone.now(),
         )
         cursor.last_scanned_block = max(cursor.last_scanned_block, target_block)
-        cursor.last_safe_block = max(cursor.last_safe_block, target_block)
         cursor.last_error = ""
         cursor.last_error_at = None
 

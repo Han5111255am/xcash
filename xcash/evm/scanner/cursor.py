@@ -15,16 +15,13 @@ def _set_cursor_position_to_latest(
     cursor: EvmScanCursor,
     latest_block: int,
 ) -> EvmScanCursor:
-    safe_block = max(0, latest_block - cursor.chain.confirm_block_count)
     EvmScanCursor.objects.filter(pk=cursor.pk).update(
         last_scanned_block=latest_block,
-        last_safe_block=safe_block,
         last_error="",
         last_error_at=None,
         updated_at=timezone.now(),
     )
     cursor.last_scanned_block = latest_block
-    cursor.last_safe_block = safe_block
     cursor.last_error = ""
     cursor.last_error_at = None
     return cursor

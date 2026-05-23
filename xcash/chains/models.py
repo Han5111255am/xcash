@@ -186,7 +186,6 @@ class Chain(models.Model):
             contract_address=usdt_mapping.address,
             defaults={
                 "last_scanned_block": 0,
-                "last_safe_block": 0,
                 "enabled": True,
             },
         )

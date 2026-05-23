@@ -192,7 +192,6 @@ class EvmReconcilePendingChainTests(TestCase):
             chain=self.chain,
             scanner_type=EvmScanCursorType.NATIVE_DIRECT,
             last_scanned_block=99,
-            last_safe_block=93,
         )
 
         reconcile_stale_pending_chain_evm.run(self.chain.pk)
@@ -204,7 +203,6 @@ class EvmReconcilePendingChainTests(TestCase):
 
         cursor.refresh_from_db()
         self.assertEqual(cursor.last_scanned_block, 99)
-        self.assertEqual(cursor.last_safe_block, 93)
 
     @patch(
         "evm.tasks.EvmChainScannerService.scan_blocks_for_reconcile",
@@ -338,7 +336,6 @@ class EvmScanBlocksForReconcileTests(TestCase):
             chain=self.chain,
             scanner_type=EvmScanCursorType.NATIVE_DIRECT,
             last_scanned_block=100,
-            last_safe_block=94,
         )
 
     def tearDown(self):
@@ -397,7 +394,6 @@ class EvmScanBlocksForReconcileTests(TestCase):
         }
 
         cursor_last_scanned_before = self.cursor.last_scanned_block
-        cursor_last_safe_before = self.cursor.last_safe_block
 
         result = EvmChainScannerService.scan_blocks_for_reconcile(
             chain=self.chain,
@@ -406,7 +402,6 @@ class EvmScanBlocksForReconcileTests(TestCase):
 
         self.cursor.refresh_from_db()
         self.assertEqual(self.cursor.last_scanned_block, cursor_last_scanned_before)
-        self.assertEqual(self.cursor.last_safe_block, cursor_last_safe_before)
 
         self.assertEqual(result.created_native, 1)
         self.assertTrue(

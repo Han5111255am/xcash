@@ -75,11 +75,9 @@ class SyncScanCursorToLatestActionMixin:
                     level=messages.ERROR,
                 )
                 continue
-            safe_block = max(0, latest_block - chain.confirm_block_count)
             with transaction.atomic():
                 queryset.model.objects.filter(pk__in=cursor_ids).update(
                     last_scanned_block=latest_block,
-                    last_safe_block=safe_block,
                     last_error="",
                     last_error_at=None,
                     updated_at=updated_at,

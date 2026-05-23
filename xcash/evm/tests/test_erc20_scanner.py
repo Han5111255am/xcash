@@ -327,7 +327,6 @@ class EvmErc20ScannerTests(TestCase):
         self.assertEqual(result.from_block, 99)
         self.assertEqual(result.to_block, 100)
         self.assertEqual(cursor.last_scanned_block, 100)
-        self.assertEqual(cursor.last_safe_block, 94)
 
     @patch("chains.service.TransferService._mark_broadcast_task_pending_confirm")
     @patch("chains.service.TransferService.enqueue_processing")
@@ -371,7 +370,6 @@ class EvmErc20ScannerTests(TestCase):
         )
         self.assertEqual(transfer.amount, Decimal("1"))
         self.assertEqual(cursor.last_scanned_block, 100)
-        self.assertEqual(cursor.last_safe_block, 94)
 
     @patch("chains.service.TransferService._mark_broadcast_task_pending_confirm")
     @patch("chains.service.TransferService.enqueue_processing")
@@ -693,7 +691,6 @@ class EvmErc20ScannerTests(TestCase):
             chain=self.chain,
             scanner_type=EvmScanCursorType.ERC20_TRANSFER,
             last_scanned_block=12,
-            last_safe_block=6,
             enabled=True,
         )
         get_latest_block_number_mock.side_effect = [100, 110]
@@ -821,7 +818,6 @@ class EvmErc20ScannerTests(TestCase):
         self.assertEqual(result.created_transfers, 0)
         self.assertEqual(result.observed_logs, 0)
         self.assertEqual(cursor.last_scanned_block, 100)
-        self.assertEqual(cursor.last_safe_block, 94)
         get_transfer_logs_mock.assert_not_called()
 
     @patch("evm.tasks.scan_evm_native_chain")
@@ -1050,7 +1046,6 @@ class EvmErc20ScannerTests(TestCase):
         self.assertEqual(result.from_block, 19)
         self.assertEqual(result.to_block, 20)
         self.assertEqual(cursor.last_scanned_block, 20)
-        self.assertEqual(cursor.last_safe_block, 14)
 
     @patch("chains.service.TransferService._mark_broadcast_task_pending_confirm")
     @patch("chains.service.TransferService.enqueue_processing")
@@ -1104,7 +1099,6 @@ class EvmErc20ScannerTests(TestCase):
         self.assertEqual(transfer.hash, "0x" + "cd" * 32)
         self.assertEqual(transfer.amount, Decimal("1"))
         self.assertEqual(cursor.last_scanned_block, 20)
-        self.assertEqual(cursor.last_safe_block, 14)
 
     @patch("chains.service.TransferService._mark_broadcast_task_pending_confirm")
     @patch("chains.service.TransferService.enqueue_processing")
@@ -1390,12 +1384,10 @@ class EvmErc20ScannerTests(TestCase):
             chain=self.chain,
             scanner_type=EvmScanCursorType.ERC20_TRANSFER,
             last_scanned_block=100,
-            last_safe_block=100,
         )
         stale_cursor = EvmScanCursor.objects.get(pk=cursor.pk)
         EvmScanCursor.objects.filter(pk=cursor.pk).update(
             last_scanned_block=150,
-            last_safe_block=150,
         )
 
         EvmErc20TransferScanner._advance_cursor(
@@ -1406,19 +1398,16 @@ class EvmErc20ScannerTests(TestCase):
 
         cursor.refresh_from_db()
         self.assertEqual(cursor.last_scanned_block, 150)
-        self.assertEqual(cursor.last_safe_block, 150)
 
     def test_native_cursor_advance_never_rewinds_database_value(self):
         cursor = EvmScanCursor.objects.create(
             chain=self.chain,
             scanner_type=EvmScanCursorType.NATIVE_DIRECT,
             last_scanned_block=100,
-            last_safe_block=100,
         )
         stale_cursor = EvmScanCursor.objects.get(pk=cursor.pk)
         EvmScanCursor.objects.filter(pk=cursor.pk).update(
             last_scanned_block=150,
-            last_safe_block=150,
         )
 
         EvmNativeDirectScanner._advance_cursor(
@@ -1429,7 +1418,6 @@ class EvmErc20ScannerTests(TestCase):
 
         cursor.refresh_from_db()
         self.assertEqual(cursor.last_scanned_block, 150)
-        self.assertEqual(cursor.last_safe_block, 150)
 
     @patch("chains.service.TransferService.create_observed_transfer")
     @patch("evm.scanner.native.EvmScannerRpcClient.get_block_receipts_status")

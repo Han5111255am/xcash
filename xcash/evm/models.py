@@ -42,7 +42,6 @@ class EvmScanCursor(models.Model):
     设计原则：
     - 游标按"链 + 扫描器类型"维度维护，不按 token 维度膨胀。
     - last_scanned_block 记录主扫描面已经推进到的最高块高。
-    - last_safe_block 记录当前安全块高，便于后台观察追平程度。
     """
 
     chain = models.ForeignKey(
@@ -57,7 +56,6 @@ class EvmScanCursor(models.Model):
         choices=EvmScanCursorType,
     )
     last_scanned_block = models.PositiveIntegerField(_("已扫描到的区块"), default=0)
-    last_safe_block = models.PositiveIntegerField(_("安全区块"), default=0)
     enabled = models.BooleanField(_("启用"), default=True)
     last_error = models.TextField(_("最近错误"), blank=True, default="")
     last_error_at = models.DateTimeField(_("最近错误时间"), blank=True, null=True)

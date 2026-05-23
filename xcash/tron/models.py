@@ -15,7 +15,6 @@ class TronWatchCursor(models.Model):
     )
     contract_address = AddressField(_("合约地址"))
     last_scanned_block = models.PositiveIntegerField(_("已扫描到的区块"), default=0)
-    last_safe_block = models.PositiveIntegerField(_("安全区块"), default=0)
     enabled = models.BooleanField(_("启用"), default=True)
     last_error = models.CharField(_("最近错误"), max_length=255, blank=True, default="")
     last_error_at = models.DateTimeField(_("最近错误时间"), blank=True, null=True)

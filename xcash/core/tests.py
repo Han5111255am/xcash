@@ -444,7 +444,6 @@ class LocalChainIntegrationMixin:
         """
         clear_evm_watch_set_cache(chain=chain)
         latest_block = chain.get_latest_block_number
-        safe_block = max(0, latest_block - chain.confirm_block_count)
 
         for scanner_type in (
             EvmScanCursorType.NATIVE_DIRECT,
@@ -455,7 +454,6 @@ class LocalChainIntegrationMixin:
                 scanner_type=scanner_type,
                 defaults={
                     "last_scanned_block": latest_block,
-                    "last_safe_block": safe_block,
                     "enabled": True,
                     "last_error": "",
                     "last_error_at": None,
@@ -1505,4 +1503,3 @@ class LocalEvmScannerIntegrationTests(LocalChainIntegrationMixin, TestCase):
         self.assertIsNone(withdrawal.transfer_id)
         self.assertEqual(broadcast_task.stage, BroadcastTaskStage.PENDING_CHAIN)
         self.assertEqual(broadcast_task.result, BroadcastTaskResult.UNKNOWN)
-

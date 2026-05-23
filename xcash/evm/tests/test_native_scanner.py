@@ -44,7 +44,6 @@ class EvmNativeScannerNoWatchSetTests(TestCase):
             chain=self.chain,
             scanner_type=EvmScanCursorType.NATIVE_DIRECT,
             last_scanned_block=39,
-            last_safe_block=33,
             enabled=True,
         )
         get_latest_block_number_mock.return_value = 100
@@ -58,5 +57,4 @@ class EvmNativeScannerNoWatchSetTests(TestCase):
         self.assertEqual(result.created_transfers, 0)
         self.assertEqual(result.observed_transfers, 0)
         self.assertEqual(cursor.last_scanned_block, 100)
-        self.assertEqual(cursor.last_safe_block, 94)
         get_full_block_mock.assert_not_called()

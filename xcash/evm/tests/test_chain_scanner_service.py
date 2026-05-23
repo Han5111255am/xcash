@@ -214,7 +214,6 @@ class EvmChainScannerServiceTests(TestCase):
             chain=self.chain,
             scanner_type=EvmScanCursorType.NATIVE_DIRECT,
             last_scanned_block=88,
-            last_safe_block=80,
         )
 
         settings.open_native_scanner = False

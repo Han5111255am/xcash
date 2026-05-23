@@ -153,7 +153,6 @@ class EvmNativeDirectScanner:
                 scanner_type=cls.cursor_type,
                 defaults={
                     "last_scanned_block": 0,
-                    "last_safe_block": 0,
                     "enabled": True,
                 },
             )
@@ -435,8 +434,8 @@ class EvmNativeDirectScanner:
 
     @staticmethod
     def _mark_cursor_idle(*, cursor: EvmScanCursor, latest_block: int) -> None:
+        del latest_block
         EvmScanCursor.objects.filter(pk=cursor.pk).update(
-            last_safe_block=max(0, latest_block - cursor.chain.confirm_block_count),
             last_error="",
             last_error_at=None,
             updated_at=timezone.now(),
@@ -449,12 +448,9 @@ class EvmNativeDirectScanner:
         latest_block: int,
         scanned_to_block: int,
     ) -> None:
+        del latest_block
         EvmScanCursor.objects.filter(pk=cursor.pk).update(
             last_scanned_block=Greatest(F("last_scanned_block"), scanned_to_block),
-            last_safe_block=Greatest(
-                F("last_safe_block"),
-                max(0, latest_block - cursor.chain.confirm_block_count),
-            ),
             last_error="",
             last_error_at=None,
             updated_at=timezone.now(),
