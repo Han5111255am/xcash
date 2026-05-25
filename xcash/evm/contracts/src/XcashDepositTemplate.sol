@@ -13,12 +13,9 @@ contract XcashDepositTemplate {
     error ERC20TransferFailed();
 
     event XcashNativeDeposited(address indexed payer, uint256 amount);
+    event XcashCollected(address indexed token, uint256 amount);
 
     receive() external payable {
-        _deposit();
-    }
-
-    fallback() external payable {
         _deposit();
     }
 
@@ -26,6 +23,7 @@ contract XcashDepositTemplate {
         if (token == address(0)) {
             uint256 amount = address(this).balance;
             if (amount == 0) revert ZeroAmount();
+            emit XcashCollected(address(0), amount);
             (bool ok,) = vault().call{value: amount}("");
             if (!ok) revert ForwardFailed();
         } else {
@@ -37,9 +35,10 @@ contract XcashDepositTemplate {
         uint256 amount = IERC20BalanceOf(token).balanceOf(address(this));
         if (amount == 0) revert ZeroAmount();
         address payable vault_ = vault();
+        emit XcashCollected(token, amount);
 
         (bool ok, bytes memory data) =
-            token.call(abi.encodeWithSelector(IERC20Transfer.transfer.selector, vault_, amount));
+            token.call(abi.encodeCall(IERC20Transfer.transfer, (vault_, amount)));
         if (!ok || !_isERC20TransferReturnSuccess(data)) {
             revert ERC20TransferFailed();
         }
@@ -49,9 +48,11 @@ contract XcashDepositTemplate {
         bytes memory args = Clones.fetchCloneArgs(address(this));
         if (args.length != 20) revert InvalidVaultArgs();
 
+        uint160 rawVault;
         assembly ("memory-safe") {
-            vault_ := mload(add(args, 20))
+            rawVault := shr(96, mload(add(args, 32)))
         }
+        vault_ = payable(address(rawVault));
         if (vault_ == address(0)) revert ZeroVault();
     }
 
@@ -70,7 +71,7 @@ contract XcashDepositTemplate {
         if (msg.value == 0) revert ZeroAmount();
         emit XcashNativeDeposited(msg.sender, msg.value);
 
-        (bool ok,) = vault().call{value: address(this).balance}("");
+        (bool ok,) = vault().call{value: msg.value}("");
         if (!ok) revert ForwardFailed();
     }
 }
