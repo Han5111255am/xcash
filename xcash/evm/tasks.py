@@ -13,7 +13,7 @@ from common.time import ago
 from evm.models import EvmTxTask
 from evm.poller import EvmTaskPoller
 from evm.scanner.rpc import EvmScannerRpcError
-from evm.scanner.service import EvmChainScannerService
+from evm.scanner.service import EvmScannerService
 
 logger = structlog.get_logger()
 
@@ -128,7 +128,7 @@ def _scan_evm_chain(chain_pk: int) -> None:
 
     result = None
     try:
-        result = EvmChainScannerService.scan_chain(chain=chain)
+        result = EvmScannerService.scan_chain(chain=chain)
     except EvmScannerRpcError:
         logger.warning("EVM 自扫描 RPC 失败", chain=chain.code)
 
@@ -301,9 +301,7 @@ def _rescan_pending_evm_chain(chain_pk: int) -> None:
             blocks_to_rescan.update(task_blocks)
 
     if blocks_to_rescan:
-        EvmChainScannerService.rescan_blocks(
-            chain=chain, block_numbers=blocks_to_rescan
-        )
+        EvmScannerService.rescan_blocks(chain=chain, block_numbers=blocks_to_rescan)
 
     logger.info(
         "EVM 重扫完成",

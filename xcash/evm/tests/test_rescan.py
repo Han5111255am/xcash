@@ -121,7 +121,7 @@ class EvmRescanPendingChainTests(TestCase):
         return get_receipt_mock
 
     @patch(
-        "evm.tasks.EvmChainScannerService.rescan_blocks",
+        "evm.tasks.EvmScannerService.rescan_blocks",
     )
     @patch(
         "evm.tasks._compute_rescan_threshold_seconds",
@@ -166,7 +166,7 @@ class EvmRescanPendingChainTests(TestCase):
         self.chain.get_block_with_poa_retry.assert_any_call(80)
 
     @patch(
-        "evm.tasks.EvmChainScannerService.rescan_blocks",
+        "evm.tasks.EvmScannerService.rescan_blocks",
     )
     @patch(
         "evm.tasks._compute_rescan_threshold_seconds",
@@ -201,7 +201,7 @@ class EvmRescanPendingChainTests(TestCase):
         self.assertEqual(cursor.last_scanned_block, 99)
 
     @patch(
-        "evm.tasks.EvmChainScannerService.rescan_blocks",
+        "evm.tasks.EvmScannerService.rescan_blocks",
     )
     @patch(
         "evm.tasks._compute_rescan_threshold_seconds",
@@ -256,7 +256,7 @@ class EvmRescanPendingChainTests(TestCase):
         self.assertEqual(queried, {first_hash, second_hash, third_hash})
 
     @patch(
-        "evm.tasks.EvmChainScannerService.rescan_blocks",
+        "evm.tasks.EvmScannerService.rescan_blocks",
     )
     @patch(
         "evm.tasks._compute_rescan_threshold_seconds",
@@ -343,7 +343,7 @@ class EvmRescanBlocksTests(TestCase):
     ):
         # 多个 stale 任务命中相距很远的块时，兜底只能扫命中的连续块段，
         # 不能扩成 [min..max] 巨大区间拖垮 RPC。
-        from evm.scanner.service import EvmChainScannerService
+        from evm.scanner.service import EvmScannerService
 
         erc20_scan_mock.side_effect = [
             EvmLogRangeResult([object(), object()], 0, 2, 0, 1),
@@ -351,7 +351,7 @@ class EvmRescanBlocksTests(TestCase):
             EvmLogRangeResult([object()], 0, 1, 0, 1),
         ]
 
-        result = EvmChainScannerService.rescan_blocks(
+        result = EvmScannerService.rescan_blocks(
             chain=self.chain,
             block_numbers={10, 11, 500, 501, 900},
         )
@@ -373,13 +373,13 @@ class EvmRescanBlocksTests(TestCase):
         self,
         erc20_scan_mock,
     ):
-        from evm.scanner.service import EvmChainScannerService
+        from evm.scanner.service import EvmScannerService
 
         self.cursor.enabled = False
         self.cursor.save(update_fields=["enabled"])
         erc20_scan_mock.return_value = EvmLogRangeResult([object()], 0, 1, 0, 1)
 
-        result = EvmChainScannerService.rescan_blocks(
+        result = EvmScannerService.rescan_blocks(
             chain=self.chain,
             block_numbers={10},
         )

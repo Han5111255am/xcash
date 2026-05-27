@@ -27,7 +27,7 @@ class EvmRescanResult:
     created_erc20: int
 
 
-class EvmChainScannerService:
+class EvmScannerService:
     """统一编排一条 EVM 链上的日志扫描流程。"""
 
     @staticmethod
@@ -81,8 +81,8 @@ class EvmChainScannerService:
     def scan_chain(*, chain: Chain) -> EvmLogScanResult:
         if chain.type != ChainType.EVM:
             raise ValueError(f"仅支持扫描 EVM 链，当前链为 {chain.code}")
-        if not EvmChainScannerService._is_enabled(chain=chain):
-            return EvmChainScannerService._empty_result(chain=chain)
+        if not EvmScannerService._is_enabled(chain=chain):
+            return EvmScannerService._empty_result(chain=chain)
 
         try:
             return EvmLogScanner.scan_chain(
@@ -90,7 +90,7 @@ class EvmChainScannerService:
                 rpc_client=EvmScannerRpcClient(chain=chain),
             )
         except EvmScannerRpcError:
-            return EvmChainScannerService._empty_result(chain=chain)
+            return EvmScannerService._empty_result(chain=chain)
 
     @classmethod
     def rescan_blocks(

@@ -28,7 +28,7 @@ from evm.models import EvmTxTask
 from evm.scanner.logs import EvmLogKindResult
 from evm.scanner.logs import EvmLogRangeResult
 from evm.scanner.rpc import EvmScannerRpcError
-from evm.scanner.service import EvmChainScannerService
+from evm.scanner.service import EvmScannerService
 from evm.scanner.watchers import EvmWatchSet
 
 
@@ -65,7 +65,7 @@ class EvmChainScannerServiceTests(TestCase):
             enabled=False,
         )
 
-        result = EvmChainScannerService.scan_chain(chain=self.chain)
+        result = EvmScannerService.scan_chain(chain=self.chain)
 
         scan_chain_mock.assert_not_called()
         self.assertEqual(result.erc20.created_transfers, 0)
@@ -85,7 +85,7 @@ class EvmChainScannerServiceTests(TestCase):
             },
         )
 
-        result = EvmChainScannerService.scan_chain(chain=self.chain)
+        result = EvmScannerService.scan_chain(chain=self.chain)
 
         scan_chain_mock.assert_called_once_with(chain=self.chain, rpc_client=ANY)
         self.assertEqual(result.native.created_transfers, 2)
@@ -99,7 +99,7 @@ class EvmChainScannerServiceTests(TestCase):
         self,
         scan_chain_mock,
     ):
-        result = EvmChainScannerService.scan_chain(chain=self.chain)
+        result = EvmScannerService.scan_chain(chain=self.chain)
 
         scan_chain_mock.assert_called_once_with(chain=self.chain, rpc_client=ANY)
         self.assertEqual(result.native.created_transfers, 0)
@@ -124,7 +124,7 @@ class EvmChainScannerServiceTests(TestCase):
             erc20_created=2,
         )
 
-        result = EvmChainScannerService.rescan_blocks(
+        result = EvmScannerService.rescan_blocks(
             chain=self.chain,
             block_numbers={10},
         )
@@ -159,7 +159,9 @@ class EvmChainScannerServiceTests(TestCase):
             active=True,
         )
         chain.__dict__["w3"] = SimpleNamespace(
-            eth=SimpleNamespace(gas_price=2, send_raw_transaction=Mock(), account=Mock()),
+            eth=SimpleNamespace(
+                gas_price=2, send_raw_transaction=Mock(), account=Mock()
+            ),
         )
         wallet = Wallet.objects.create()
         addr = Address.objects.create(
@@ -244,9 +246,7 @@ class EvmChainScannerServiceTests(TestCase):
         self.assertEqual(task.signed_payload, "")
         self.assertIsNone(task.gas_price)
         self.assertIsNone(task.base_task.tx_hash)
-        self.assertFalse(
-            TxHash.objects.filter(tx_task=task.base_task).exists()
-        )
+        self.assertFalse(TxHash.objects.filter(tx_task=task.base_task).exists())
 
     @patch("evm.models.get_signer_backend")
     @patch.object(EvmTxTask, "_next_nonce", return_value=0)

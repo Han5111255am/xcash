@@ -430,7 +430,9 @@ class EvmErc20ScannerTests(TestCase):
                 "get_logs": lambda *_args, **kwargs: (
                     malformed_logs
                     if kwargs["topic0"]
-                    == Web3.to_hex(Web3.keccak(text="Transfer(address,address,uint256)"))
+                    == Web3.to_hex(
+                        Web3.keccak(text="Transfer(address,address,uint256)")
+                    )
                     else []
                 ),
                 "get_block_timestamp": lambda *_args, **_kwargs: 1_700_000_000,
@@ -803,9 +805,7 @@ class EvmErc20ScannerTests(TestCase):
 
         EvmLogScanner.scan_chain(chain=self.chain, batch_size=32)
 
-        topic0_values = [
-            call.kwargs["topic0"] for call in get_logs_mock.call_args_list
-        ]
+        topic0_values = [call.kwargs["topic0"] for call in get_logs_mock.call_args_list]
         self.assertIn(
             Web3.to_hex(Web3.keccak(text="Transfer(address,address,uint256)")),
             topic0_values,
@@ -834,7 +834,7 @@ class EvmErc20ScannerTests(TestCase):
         self.assertIsNone(get_logs_mock.call_args.kwargs["addresses"])
 
     @patch("evm.tasks.EvmTaskPoller.poll_chain")
-    @patch("evm.tasks.EvmChainScannerService.scan_chain")
+    @patch("evm.tasks.EvmScannerService.scan_chain")
     def test_scan_evm_chain_task_dispatches_combined_scanner(
         self,
         scan_chain_mock,

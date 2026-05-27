@@ -12,8 +12,8 @@ from django.utils import timezone
 from chains.models import Chain
 from chains.models import ChainType
 from evm.models import EvmScanCursor
-from evm.scanner.constants import DEFAULT_DEPOSIT_LOG_SCAN_BATCH_SIZE
 from evm.scanner.constants import DEFAULT_DEPOSIT_LOG_SCAN_REPLAY_BLOCKS
+from evm.scanner.constants import DEFAULT_LOG_SCAN_BATCH_SIZE
 from evm.scanner.constants import ERC20_TRANSFER_TOPIC0
 from evm.scanner.constants import XCASH_COLLECTED_TOPIC0
 from evm.scanner.constants import XCASH_NATIVE_RECEIVED_TOPIC0
@@ -73,7 +73,7 @@ class EvmLogScanner:
         cls,
         *,
         chain: Chain,
-        batch_size: int = DEFAULT_DEPOSIT_LOG_SCAN_BATCH_SIZE,
+        batch_size: int = DEFAULT_LOG_SCAN_BATCH_SIZE,
         rpc_client: EvmScannerRpcClient | None = None,
     ) -> EvmLogScanResult:
         if chain.type != ChainType.EVM:
