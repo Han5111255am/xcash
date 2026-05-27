@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import GenericViewSet
 
+from chains.constants import EVM_CHAIN_NAMES
 from chains.models import Chain
 from chains.models import ChainType
 from common.error_codes import ErrorCode
@@ -56,12 +57,14 @@ class InternalDepositViewSet(ListModelMixin, RetrieveModelMixin, GenericViewSet)
         if chain_type:
             if chain_type != ChainType.EVM:
                 raise APIError(ErrorCode.INVALID_CHAIN)
-            chain = Chain.objects.filter(type=ChainType.EVM, active=True).first()
+            chain = Chain.objects.filter(
+                chain__in=EVM_CHAIN_NAMES, active=True
+            ).first()
             if chain is None:
                 raise APIError(ErrorCode.INVALID_CHAIN)
         elif chain_code:
             try:
-                chain = Chain.objects.get(code=chain_code, active=True)
+                chain = Chain.objects.get(chain=chain_code, active=True)
             except Chain.DoesNotExist:
                 raise APIError(ErrorCode.INVALID_CHAIN) from None
         else:

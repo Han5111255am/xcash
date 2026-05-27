@@ -59,7 +59,7 @@ class DepositViewSet(viewsets.GenericViewSet):
             raise APIError(ErrorCode.INVALID_UID)
 
         try:
-            chain = Chain.objects.get(code=chain_code, active=True)
+            chain = Chain.objects.get(chain=chain_code, active=True)
         except Chain.DoesNotExist as exc:
             raise APIError(ErrorCode.INVALID_CHAIN) from exc
 

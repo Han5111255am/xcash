@@ -188,7 +188,7 @@ class TxTaskAdmin(ReadOnlyModelAdmin):
     def display_address(self, obj: TxTask):
         return obj.address
 
-    @admin.display(ordering="chain__name", description=_("网络"))
+    @admin.display(ordering="chain__chain", description=_("网络"))
     def display_chain(self, obj: TxTask):
         return obj.chain
 

@@ -195,7 +195,7 @@ class InvoiceCreateSerializer(Serializer):
             for chain_codes in methods.values()
             for chain_code in chain_codes
         }
-        chains = list(Chain.objects.filter(code__in=chain_codes, active=True))
+        chains = list(Chain.objects.filter(chain__in=chain_codes, active=True))
         if not chains:
             raise APIError(ErrorCode.CONTRACT_BILLING_EVM_ONLY)
 
@@ -224,7 +224,7 @@ class InvoiceCreateSerializer(Serializer):
             for chain_codes in methods.values()
             for chain_code in chain_codes
         }
-        chains = list(Chain.objects.filter(code__in=chain_codes, active=True))
+        chains = list(Chain.objects.filter(chain__in=chain_codes, active=True))
         if not chains:
             raise APIError(ErrorCode.DIFFER_BILLING_TRON_ONLY)
 

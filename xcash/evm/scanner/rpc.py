@@ -352,7 +352,8 @@ class EvmScannerRpcClient:
                 full_transactions=full_transactions,
             )  # noqa: SLF001
         except ExtraDataLengthError:
-            self._mark_chain_as_poa()
+            # is_poa 现由 chains.constants 单一事实源持有，正常路径不会触发兜底；
+            # 新接入链若未及时打 POA 标记，这里仅做即时降级，不再回写 DB。
             retry_w3 = self._build_poa_retry_w3()
             return retry_w3.eth.get_block(
                 block_number,
@@ -364,10 +365,6 @@ class EvmScannerRpcClient:
         w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
         self.chain.__dict__["w3"] = w3
         return w3
-
-    def _mark_chain_as_poa(self) -> None:
-        self.chain.__class__.objects.filter(pk=self.chain.pk).update(is_poa=True)
-        self.chain.is_poa = True
 
     def _format_rpc_error(
         self,

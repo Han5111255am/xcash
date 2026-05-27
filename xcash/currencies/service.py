@@ -82,7 +82,7 @@ class CryptoService:
             .filter(crypto__active=True, chain__active=True)
         )
         if chain_codes is not None:
-            tokens = tokens.filter(chain__code__in=chain_codes)
+            tokens = tokens.filter(chain__chain__in=chain_codes)
 
         sanitized: dict[str, set[str]] = {}
         for token in tokens:

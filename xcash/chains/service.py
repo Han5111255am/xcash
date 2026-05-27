@@ -7,6 +7,7 @@ import structlog
 from django.db import IntegrityError
 from django.db import transaction
 
+from chains.constants import CHAIN_SPECS
 from chains.models import Address
 from chains.models import AddressUsage
 from chains.models import Chain
@@ -38,7 +39,8 @@ class ChainService:
 
     @staticmethod
     def get_by_code(code: str, *, active_only: bool = True) -> Chain:
-        qs = Chain.objects.filter(code=code)
+        # 入参变量名保留 code 以减少调用方改动；语义上对应 Chain.chain (slug)。
+        qs = Chain.objects.filter(chain=code)
         if active_only:
             qs = qs.filter(active=True)
         return qs.get()
@@ -49,10 +51,14 @@ class ChainService:
 
     @staticmethod
     def codes_of_types(chain_types: set[str]) -> set[str]:
+        # type 是 property，无法直接进 ORM 过滤；先用常量算出匹配的 ChainName 集合，再查 active 链。
+        matching_names = {
+            name for name, spec in CHAIN_SPECS.items() if spec.type in chain_types
+        }
         return set(
-            Chain.objects.filter(type__in=chain_types, active=True).values_list(
-                "code", flat=True
-            )
+            Chain.objects.filter(
+                chain__in=matching_names, active=True
+            ).values_list("chain", flat=True)
         )
 
 

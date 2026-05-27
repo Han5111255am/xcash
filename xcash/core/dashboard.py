@@ -474,7 +474,7 @@ def dashboard_callback(request, context):
             ],
             "payment_methods": [
                 {
-                    "label": f"{row['crypto__symbol']} / {row['chain__code']}",
+                    "label": f"{row['crypto__symbol']} / {row['chain__chain']}",
                     "gmv": _fmt_usd(row["gmv"]),
                     "order_count": row["order_count"],
                 }
