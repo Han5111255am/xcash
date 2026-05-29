@@ -733,18 +733,6 @@ wheels = [
 ]
 
 [[package]]
-name = "django-model-utils"
-version = "5.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/81/60/5e232c32a2c977cc1af8c70a38ef436598bc649ad89c2c4568454edde2c9/django_model_utils-5.0.0.tar.gz", hash = "sha256:041cdd6230d2fbf6cd943e1969318bce762272077f4ecd333ab2263924b4e5eb", size = 80559, upload-time = "2024-09-04T11:35:22.858Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/13/87a42048700c54bfce35900a34e2031245132775fb24363fc0e33664aa9c/django_model_utils-5.0.0-py3-none-any.whl", hash = "sha256:fec78e6c323d565a221f7c4edc703f4567d7bb1caeafe1acd16a80c5ff82056b", size = 42630, upload-time = "2024-09-04T11:36:23.166Z" },
-]
-
-[[package]]
 name = "django-otp"
 version = "1.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -896,20 +884,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ae/b6/03bb70946330e88ffec97aefd3ea75ba575cb2e762061e0e62a213befee8/docutils-0.22.4.tar.gz", hash = "sha256:4db53b1fde9abecbb74d91230d32ab626d94f6badfc575d6db9194a49df29968", size = 2291750, upload-time = "2025-12-18T19:00:26.443Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/02/10/5da547df7a391dcde17f59520a231527b8571e6f46fc8efb02ccb370ab12/docutils-0.22.4-py3-none-any.whl", hash = "sha256:d0013f540772d1420576855455d050a2180186c91c15779301ac2ccb3eeb68de", size = 633196, upload-time = "2025-12-18T19:00:18.077Z" },
-]
-
-[[package]]
-name = "drf-extensions"
-version = "0.8.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "django" },
-    { name = "djangorestframework" },
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/77/5a/57e3cc6f2bb4e1e84ad85eed0a12ddf22d5217b6b87c39e611d10e677a63/drf_extensions-0.8.0.tar.gz", hash = "sha256:c3f27bca74a2def53e8454a5c7b327595195df51e121743120b2f51ef5a52aaa", size = 173718, upload-time = "2025-04-10T07:50:05.139Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/c1/b9721c9239b465c0ceac32b33e732c08f6ea0afd8156700e417416a47733/drf_extensions-0.8.0-py2.py3-none-any.whl", hash = "sha256:ab7bd854c9061c27ab55233b66d758001e5c2d81aaa9d117cbbe1c9ea49c77ab", size = 21589, upload-time = "2025-04-10T07:50:02.573Z" },
 ]
 
 [[package]]
@@ -2492,15 +2466,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ulid-py"
-version = "1.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3b/53/d14a8ec344048e21431821cb49e9a6722384f982b889c2dd449428dbdcc1/ulid-py-1.1.0.tar.gz", hash = "sha256:dc6884be91558df077c3011b9fb0c87d1097cb8fc6534b11f310161afd5738f0", size = 22514, upload-time = "2020-09-15T15:35:09.414Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/7c/a12c879fe6c2b136a718c142115ff99397fbf62b4929d970d58ae386d55f/ulid_py-1.1.0-py2.py3-none-any.whl", hash = "sha256:b56a0f809ef90d6020b21b89a87a48edc7c03aea80e5ed5174172e82d76e3987", size = 25753, upload-time = "2020-09-15T15:35:08.075Z" },
-]
-
-[[package]]
 name = "urllib3"
 version = "2.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2705,13 +2670,11 @@ dependencies = [
     { name = "django-cors-headers" },
     { name = "django-environ" },
     { name = "django-migration-linter" },
-    { name = "django-model-utils" },
     { name = "django-otp" },
     { name = "django-redis" },
     { name = "django-smart-ratelimit", extra = ["redis"] },
     { name = "django-unfold" },
     { name = "djangorestframework" },
-    { name = "drf-extensions" },
     { name = "gunicorn" },
     { name = "hiredis" },
     { name = "httpx" },
@@ -2719,7 +2682,6 @@ dependencies = [
     { name = "redis" },
     { name = "shortuuid" },
     { name = "structlog" },
-    { name = "ulid-py" },
     { name = "web3" },
 ]
 
@@ -2766,13 +2728,11 @@ requires-dist = [
     { name = "django-cors-headers", specifier = "==4.9.0" },
     { name = "django-environ", specifier = "==0.13.0" },
     { name = "django-migration-linter", specifier = "==6.0.0" },
-    { name = "django-model-utils", specifier = "==5.0.0" },
     { name = "django-otp", specifier = ">=1.7.0" },
     { name = "django-redis", specifier = "==6.0.0" },
     { name = "django-smart-ratelimit", extras = ["redis"], specifier = "==2.2.1" },
     { name = "django-unfold", specifier = "==0.94.0" },
     { name = "djangorestframework", specifier = "==3.17.1" },
-    { name = "drf-extensions", specifier = "==0.8.0" },
     { name = "gunicorn", specifier = "==26.0.0" },
     { name = "hiredis", specifier = "==3.3.1" },
     { name = "httpx", specifier = "==0.28.1" },
@@ -2780,7 +2740,6 @@ requires-dist = [
     { name = "redis", specifier = "==8.0.0" },
     { name = "shortuuid", specifier = "==1.0.13" },
     { name = "structlog", specifier = "==25.5.0" },
-    { name = "ulid-py", specifier = "==1.1.0" },
     { name = "web3", specifier = "==7.16.0" },
 ]
 
