@@ -22,7 +22,6 @@ dependencies = [
     "django-environ==0.13.0",
     "django-model-utils==5.0.0",
     "django-unfold==0.94.0",
-    "django-sequences==3.0",
     "djangorestframework==3.17.1",
     "drf-extensions==0.8.0",
     "django-redis==6.0.0",

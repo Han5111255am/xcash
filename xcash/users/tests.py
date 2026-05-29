@@ -15,7 +15,6 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from chains.test_signer import build_test_remote_signer_backend
 from users.models import AdminAccessLog
-from users.models import Customer
 from users.models import User
 from users.otp import ADMIN_OTP_PENDING_USER_ID_SESSION_KEY
 from users.otp import ADMIN_OTP_VERIFIED_AT_SESSION_KEY
@@ -39,21 +38,6 @@ def tearDownModule():
     while _USERS_TEST_PATCHERS:
         _USERS_TEST_PATCHERS.pop().stop()
     _cache.clear()
-
-
-class CustomerRawAccIdxTests(TestCase):
-    def test_address_index_can_repeat_across_projects(self):
-        # 不同项目的客户索引都会从 0 开始分配，不能被全局唯一约束拦住。
-        from projects.models import Project
-
-        first_project = Project.objects.create(name="Project A")
-        second_project = Project.objects.create(name="Project B")
-
-        first_customer = Customer.objects.create(project=first_project, uid="u-1")
-        second_customer = Customer.objects.create(project=second_project, uid="u-1")
-
-        self.assertEqual(first_customer.address_index, 0)
-        self.assertEqual(second_customer.address_index, 0)
 
 
 class TestEnsureDefaultSuperuserCommand(TestCase):

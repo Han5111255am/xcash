@@ -1,7 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from sequences import get_next_value  # noqa
 
 from users.managers import UserManager
 
@@ -44,10 +43,6 @@ class Customer(models.Model):
         db_index=True,
         verbose_name=_("客户UID"),
     )
-    # address_index 对应 BIP44 的 address_index 层级，在项目内唯一；不同项目都从 0 开始分配。
-    address_index = models.BigIntegerField(
-        editable=False,
-    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="加入时间")
 
@@ -58,30 +53,12 @@ class Customer(models.Model):
                 fields=("uid", "project"),
                 name="uniq_customer_uid_project",
             ),
-            models.UniqueConstraint(
-                fields=("address_index", "project"),
-                name="uniq_customer_address_index_project",
-            ),
         ]
         verbose_name = _("客户")
         verbose_name_plural = verbose_name
 
     def __str__(self):
         return self.uid
-
-    def save(self, *args, **kwargs):
-        if self.pk is None and self.address_index is None:
-            sequence_name = self.get_project_sequence_name()
-            # get_next_value 会为这个动态名称的序列获取下一个值
-            # initial_value=0 确保序列的第一个值是 0
-            self.address_index = get_next_value(sequence_name, initial_value=0)
-
-        super().save(*args, **kwargs)
-
-    def get_project_sequence_name(self):
-        # 为每个 project 生成一个动态且唯一的序列名称
-        # 序列名在数据库层唯一标识项目的 address_index 自增器，不可随意更改。
-        return f"customer_address_index_project_{self.project_id}"
 
 
 class AdminAccessLog(models.Model):
