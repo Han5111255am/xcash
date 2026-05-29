@@ -32,7 +32,6 @@ from evm.tests._fixtures import make_tx_hash
 from evm.tests._fixtures import make_tx_task
 from projects.models import Project
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
 
 
 def _erc20_transfer_log(*, token, from_addr, to_addr, value_raw, log_index):
@@ -270,7 +269,6 @@ class DirectInternalLifecycleWithoutBroadcastAssetFieldsTests(TestCase):
             out_no="noasset-withdrawal",
             to=recipient,
             tx_task=base_task,
-            status=WithdrawalStatus.PENDING,
         )
 
         with patch("evm.internal_tx.processor._lookup_block_timestamp") as ts:

@@ -46,7 +46,7 @@ from evm.local_erc20 import LOCAL_EVM_ERC20_BYTECODE
 from evm.scanner.constants import ERC20_TRANSFER_TOPIC0
 from projects.models import Project
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 
 _CORE_TEST_PATCHERS = []
 
@@ -450,7 +450,6 @@ class LocalEvmScannerIntegrationTests(LocalChainIntegrationMixin, TestCase):
             hash=tx_task.tx_hash,
             tx_task=tx_task,
             transfer=transfer,
-            status=WithdrawalStatus.CONFIRMING,
         )
 
         old_retries = confirm_transfer.request.retries
@@ -465,6 +464,6 @@ class LocalEvmScannerIntegrationTests(LocalChainIntegrationMixin, TestCase):
         self.assertFalse(Transfer.objects.filter(pk=transfer.pk).exists())
         withdrawal.refresh_from_db()
         tx_task.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CHAIN)

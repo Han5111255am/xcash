@@ -44,6 +44,7 @@ from evm.models import EvmTxTask
 from evm.poller import EvmTaskPoller
 from evm.scanner.constants import ERC20_TRANSFER_TOPIC0
 from evm.tasks import confirm_non_transfer_tx_tasks
+from withdrawals.models import WithdrawalReviewStatus
 
 # ---------------------------------------------------------------------------
 # 公共测试地址（已通过 Web3.to_checksum_address 转换，满足 EIP-55 checksum 要求）
@@ -444,7 +445,6 @@ class PollerIntegrationTest(TestCase):
         from chains.models import TxHash
         from projects.models import Project
         from withdrawals.models import Withdrawal
-        from withdrawals.models import WithdrawalStatus
 
         project = Project.objects.create(
             name=f"proj-{tx_hash[-6:]}",
@@ -485,9 +485,7 @@ class PollerIntegrationTest(TestCase):
             worth=Decimal("100"),
             out_no=f"out-{tx_hash[-6:]}",
             to=_RECEIVER_HEX,
-            tx_task=base_task,
-            status=WithdrawalStatus.PENDING,
-            hash=tx_hash,
+            tx_task=base_task,            hash=tx_hash,
         )
         return withdrawal, base_task, evm_task
 
@@ -496,7 +494,6 @@ class PollerIntegrationTest(TestCase):
         from chains.models import TxHash
         from projects.models import Project
         from withdrawals.models import Withdrawal
-        from withdrawals.models import WithdrawalStatus
 
         project = Project.objects.create(
             name=f"proj-native-{tx_hash[-6:]}",
@@ -537,9 +534,7 @@ class PollerIntegrationTest(TestCase):
             worth=Decimal("1.5"),
             out_no=f"out-native-{tx_hash[-6:]}",
             to=_RECEIVER_HEX,
-            tx_task=base_task,
-            status=WithdrawalStatus.PENDING,
-            hash=tx_hash,
+            tx_task=base_task,            hash=tx_hash,
         )
         return withdrawal, base_task, evm_task
 
@@ -885,7 +880,6 @@ class PollerIntegrationTest(TestCase):
         webhook_mock,
     ):
         """ERC-20 完整管线：poll_chain 创建 Transfer → process() 匹配提币。"""
-        from withdrawals.models import WithdrawalStatus
 
         tx_hash = "0x" + "a2" * 32
         withdrawal, base_task, evm_task = self._create_erc20_withdrawal(tx_hash=tx_hash)
@@ -901,14 +895,13 @@ class PollerIntegrationTest(TestCase):
 
         withdrawal.refresh_from_db()
         transfer.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(withdrawal.transfer, transfer)
         self.assertEqual(transfer.type, TransferType.Withdrawal)
         self.assertIsNotNone(transfer.processed_at)
 
     def test_process_ignores_internal_withdrawal_when_transfer_value_mismatches(self):
         """同 tx_hash 的异常事件不应仅凭 hash 绑定为内部提币。"""
-        from withdrawals.models import WithdrawalStatus
 
         tx_hash = "0x" + "a6" * 32
         withdrawal, base_task, _evm_task = self._create_erc20_withdrawal(
@@ -933,7 +926,7 @@ class PollerIntegrationTest(TestCase):
         withdrawal.refresh_from_db()
         base_task.refresh_from_db()
         transfer.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
         self.assertEqual(base_task.status, TxTaskStatus.PENDING_CHAIN)
         self.assertEqual(transfer.type, "")
@@ -951,7 +944,6 @@ class PollerIntegrationTest(TestCase):
         webhook_mock,
     ):
         """Native 完整管线：poll_chain 创建 Transfer → process() 匹配提币。"""
-        from withdrawals.models import WithdrawalStatus
 
         tx_hash = "0x" + "a3" * 32
         withdrawal, base_task, evm_task = self._create_native_withdrawal(
@@ -970,7 +962,7 @@ class PollerIntegrationTest(TestCase):
 
         withdrawal.refresh_from_db()
         transfer.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(withdrawal.transfer, transfer)
         self.assertEqual(transfer.type, TransferType.Withdrawal)
         self.assertIsNotNone(transfer.processed_at)
@@ -1032,7 +1024,6 @@ class PollerIntegrationTest(TestCase):
         webhook_mock,
     ):
         """链上 receipt status=0 时，协调器标记 TxTask 失败、提币失败。"""
-        from withdrawals.models import WithdrawalStatus
 
         tx_hash = "0x" + "a5" * 32
         withdrawal, base_task, evm_task = self._create_erc20_withdrawal(tx_hash=tx_hash)
@@ -1050,7 +1041,7 @@ class PollerIntegrationTest(TestCase):
         base_task.refresh_from_db()
         withdrawal.refresh_from_db()
         self.assertEqual(base_task.status, TxTaskStatus.FAILED)
-        self.assertEqual(withdrawal.status, WithdrawalStatus.FAILED)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         # 失败交易不应创建 Transfer
         self.assertEqual(
             Transfer.objects.filter(hash=tx_hash).count(),

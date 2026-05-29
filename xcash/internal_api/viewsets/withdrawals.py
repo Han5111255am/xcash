@@ -19,7 +19,7 @@ from currencies.service import FiatService
 from projects.models import Project
 from users.models import Customer
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 from withdrawals.service import WithdrawalService
 
 
@@ -113,9 +113,9 @@ class InternalWithdrawalViewSet(ModelViewSet):
             chain=chain,
             amount=data["amount"],
             worth=worth,
-            status=(
-                WithdrawalStatus.REVIEWING if require_review
-                else WithdrawalStatus.PENDING
+            review_status=(
+                WithdrawalReviewStatus.REVIEWING if require_review
+                else WithdrawalReviewStatus.APPROVED
             ),
         )
 
@@ -131,7 +131,7 @@ class InternalWithdrawalViewSet(ModelViewSet):
     def approve(self, request, project_appid=None, sys_no=None):
         """放行审核中的提币，复用 WithdrawalService.approve_withdrawal。"""
         withdrawal = self.get_object()
-        if withdrawal.status != WithdrawalStatus.REVIEWING:
+        if withdrawal.review_status != WithdrawalReviewStatus.REVIEWING:
             raise APIError(ErrorCode.WITHDRAWAL_NOT_REVIEWABLE)
 
         reviewer = self._get_internal_reviewer()
@@ -146,7 +146,7 @@ class InternalWithdrawalViewSet(ModelViewSet):
     def reject(self, request, project_appid=None, sys_no=None):
         """拒绝审核中的提币，复用 WithdrawalService.reject_withdrawal。"""
         withdrawal = self.get_object()
-        if withdrawal.status != WithdrawalStatus.REVIEWING:
+        if withdrawal.review_status != WithdrawalReviewStatus.REVIEWING:
             raise APIError(ErrorCode.WITHDRAWAL_NOT_REVIEWABLE)
 
         serializer = WithdrawalRejectSerializer(data=request.data)

@@ -17,7 +17,6 @@ from internal_api.viewsets.differ_recipient_addresses import (
 )
 from internal_api.viewsets.epay import EpayMerchantView
 from internal_api.viewsets.invoices import InternalInvoiceViewSet
-from internal_api.viewsets.operations import HotWalletFundingViewSet
 from internal_api.viewsets.operations import WithdrawalReviewLogViewSet
 from internal_api.viewsets.stats import StatsViewSet
 from internal_api.viewsets.webhooks import DeliveryAttemptViewSet
@@ -34,11 +33,6 @@ project_router.register(
     "recipient-addresses",
     DifferRecipientAddressViewSet,
     basename="internal-recipient-address",
-)
-project_router.register(
-    "hot-wallet-fundings",
-    HotWalletFundingViewSet,
-    basename="internal-hot-wallet-funding",
 )
 project_router.register(
     "withdrawal-review-logs",

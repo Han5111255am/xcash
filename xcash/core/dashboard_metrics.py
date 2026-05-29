@@ -14,6 +14,7 @@ from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
+from chains.models import TxTaskStatus
 from chains.signer import SignerServiceError
 from chains.signer import get_signer_backend
 from core.monitoring import OperationalRiskService
@@ -22,7 +23,7 @@ from invoices.models import InvoiceStatus
 from webhooks.models import DeliveryAttempt
 from webhooks.models import WebhookEvent
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 
 ZERO_DECIMAL = Value(
     Decimal("0"),
@@ -120,21 +121,35 @@ def build_dashboard_metrics() -> dict:
 
     withdrawal_30d = withdrawal_queryset.filter(created_at__gte=last_30d_start)
     withdrawal_metrics = withdrawal_queryset.aggregate(
-        reviewing_count=Count("id", filter=Q(status=WithdrawalStatus.REVIEWING)),
-        pending_count=Count("id", filter=Q(status=WithdrawalStatus.PENDING)),
-        confirming_count=Count("id", filter=Q(status=WithdrawalStatus.CONFIRMING)),
+        reviewing_count=Count(
+            "id", filter=Q(review_status=WithdrawalReviewStatus.REVIEWING)
+        ),
+        pending_count=Count(
+            "id",
+            filter=Q(
+                review_status=WithdrawalReviewStatus.APPROVED,
+                tx_task__status__in=(TxTaskStatus.QUEUED, TxTaskStatus.PENDING_CHAIN),
+            ),
+        ),
+        confirming_count=Count(
+            "id",
+            filter=Q(
+                review_status=WithdrawalReviewStatus.APPROVED,
+                tx_task__status=TxTaskStatus.PENDING_CONFIRM,
+            ),
+        ),
     )
     withdrawal_30d_completed = withdrawal_30d.filter(
-        status=WithdrawalStatus.COMPLETED
+        tx_task__status=TxTaskStatus.CONFIRMED
     ).aggregate(
         count=Count("id"),
         worth=Coalesce(Sum("worth"), ZERO_DECIMAL),
     )
     withdrawal_30d_rejected = withdrawal_30d.filter(
-        status=WithdrawalStatus.REJECTED
+        review_status=WithdrawalReviewStatus.REJECTED
     ).count()
     withdrawal_30d_failed = withdrawal_30d.filter(
-        status=WithdrawalStatus.FAILED
+        tx_task__status=TxTaskStatus.FAILED
     ).count()
 
     delivery_7d = delivery_attempt_queryset.filter(created_at__gte=last_7d_start)

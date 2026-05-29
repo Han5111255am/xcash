@@ -25,6 +25,7 @@ from currencies.models import Crypto
 from evm.choices import TxKind
 from evm.constants import DEFAULT_ERC20_TRANSFER_GAS
 from evm.models import EvmTxTask
+from withdrawals.models import WithdrawalReviewStatus
 
 
 class EvmInternalTaskConfirmationTests(TestCase):
@@ -72,7 +73,6 @@ class EvmInternalTaskConfirmationTests(TestCase):
     ):
         from projects.models import Project
         from withdrawals.models import Withdrawal
-        from withdrawals.models import WithdrawalStatus
 
         project = Project.objects.create(
             name=f"project-{tx_hash[-6:]}",
@@ -121,9 +121,7 @@ class EvmInternalTaskConfirmationTests(TestCase):
             worth=Decimal("12.34"),
             out_no=f"out-{tx_hash[-6:]}",
             to=recipient,
-            tx_task=base_task,
-            status=WithdrawalStatus.PENDING,
-            hash=tx_hash,
+            tx_task=base_task,            hash=tx_hash,
         )
         return withdrawal, base_task, evm_task
 
@@ -172,7 +170,7 @@ class EvmInternalTaskConfirmationTests(TestCase):
         withdrawal.refresh_from_db()
         base_task.refresh_from_db()
         evm_task.refresh_from_db()
-        self.assertEqual(withdrawal.status, "failed")
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(base_task.status, TxTaskStatus.FAILED)
         self.assertEqual(Transfer.objects.count(), 0)
         # 当前契约：FAILED 不发 webhook（与 withdrawals.tests 一致）。
@@ -187,7 +185,6 @@ class EvmInternalTaskConfirmationTests(TestCase):
     ):
         """未达到 receipt 轮询延迟的 PENDING_CHAIN 任务不做任何处理。"""
         from evm.poller import EvmTaskPoller
-        from withdrawals.models import WithdrawalStatus
 
         withdrawal, base_task, evm_task = self._create_withdrawal_with_pending_evm_task(
             tx_hash="0x" + "8" * 64
@@ -203,7 +200,7 @@ class EvmInternalTaskConfirmationTests(TestCase):
         withdrawal.refresh_from_db()
         base_task.refresh_from_db()
         evm_task.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(base_task.status, TxTaskStatus.PENDING_CHAIN)
         webhook_mock.assert_not_called()
 

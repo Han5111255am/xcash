@@ -15,7 +15,6 @@ from internal_api.viewsets.deposits import InternalDepositViewSet
 from internal_api.viewsets.differ_recipient_addresses import (
     DifferRecipientAddressViewSet,
 )
-from internal_api.viewsets.operations import HotWalletFundingViewSet
 from internal_api.viewsets.withdrawals import InternalWithdrawalViewSet
 
 from chains.models import Wallet
@@ -149,7 +148,6 @@ class TestListViewSetsHaveStableOrdering:
         [
             InternalDepositViewSet,
             InternalWithdrawalViewSet,
-            HotWalletFundingViewSet,
             DifferRecipientAddressViewSet,
         ],
     )

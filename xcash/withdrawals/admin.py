@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from unfold.decorators import display
 
+from chains.models import TxTaskStatus
 from common.admin import ModelAdmin
 from common.admin import ReadOnlyModelAdmin
 from core.monitoring import OperationalRiskService
@@ -21,10 +22,9 @@ from users.otp import record_admin_access
 from users.otp import refresh_admin_otp_verification
 from users.otp import set_pending_admin_otp
 from users.otp import verify_otp_token
-from withdrawals.models import HotWalletFunding
 from withdrawals.models import Withdrawal
 from withdrawals.models import WithdrawalReviewLog
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 from withdrawals.service import WithdrawalService
 
 # Register your models here.
@@ -44,17 +44,19 @@ class WithdrawalAttentionFilter(admin.SimpleListFilter):
         now = timezone.now()
         stalled_q = (
             Q(
-                status=WithdrawalStatus.REVIEWING,
+                review_status=WithdrawalReviewStatus.REVIEWING,
                 updated_at__lte=now
                 - OperationalRiskService.reviewing_withdrawal_timeout(),
             )
             | Q(
-                status=WithdrawalStatus.PENDING,
+                review_status=WithdrawalReviewStatus.APPROVED,
+                tx_task__status__in=(TxTaskStatus.QUEUED, TxTaskStatus.PENDING_CHAIN),
                 updated_at__lte=now
                 - OperationalRiskService.pending_withdrawal_timeout(),
             )
             | Q(
-                status=WithdrawalStatus.CONFIRMING,
+                review_status=WithdrawalReviewStatus.APPROVED,
+                tx_task__status=TxTaskStatus.PENDING_CONFIRM,
                 updated_at__lte=now
                 - OperationalRiskService.confirming_withdrawal_timeout(),
             )
@@ -70,50 +72,18 @@ class WithdrawalReviewLogInline(admin.TabularInline):
     model = WithdrawalReviewLog
     extra = 0
     can_delete = False
-    fields = ("actor", "action", "from_status", "to_status", "note", "created_at")
+    fields = (
+        "actor",
+        "action",
+        "from_review_status",
+        "to_review_status",
+        "note",
+        "created_at",
+    )
     readonly_fields = fields
 
     def has_add_permission(self, request, obj=None):
         return False
-
-
-@admin.register(HotWalletFunding)
-class HotWalletFundingAdmin(ReadOnlyModelAdmin):
-    list_display = (
-        "project",
-        "transfer_chain",
-        "transfer_crypto",
-        "transfer_amount",
-        "transfer_hash",
-        "transfer_status",
-        "transfer_datetime",
-    )
-    list_filter = ("project",)
-    list_select_related = ("project", "transfer", "transfer__chain", "transfer__crypto")
-
-    @admin.display(description=_("链"))
-    def transfer_chain(self, obj):
-        return obj.transfer.chain if obj.transfer else "-"
-
-    @admin.display(description=_("代币"))
-    def transfer_crypto(self, obj):
-        return obj.transfer.crypto if obj.transfer else "-"
-
-    @admin.display(description=_("数量"))
-    def transfer_amount(self, obj):
-        return obj.transfer.amount if obj.transfer else "-"
-
-    @admin.display(description=_("哈希"))
-    def transfer_hash(self, obj):
-        return obj.transfer.hash if obj.transfer else "-"
-
-    @admin.display(description=_("状态"))
-    def transfer_status(self, obj):
-        return obj.transfer.get_status_display() if obj.transfer else "-"
-
-    @admin.display(description=_("时间"))
-    def transfer_datetime(self, obj):
-        return obj.transfer.datetime if obj.transfer else "-"
 
 
 @admin.register(Withdrawal)
@@ -128,7 +98,8 @@ class WithdrawalAdmin(ModelAdmin):
         "chain",
         "amount",
         "worth",
-        "display_status",
+        "display_review_status",
+        "display_tx_status",
         "display_attention",
         "display_review_log_count",
         "reviewed_by",
@@ -146,7 +117,7 @@ class WithdrawalAdmin(ModelAdmin):
         "worth",
         "to",
         "hash",
-        "status",
+        "review_status",
         "reviewed_by",
         "reviewed_at",
         "transfer",
@@ -168,7 +139,7 @@ class WithdrawalAdmin(ModelAdmin):
                     "amount",
                     "worth",
                     "to",
-                    "status",
+                    "review_status",
                 )
             },
         ),
@@ -210,7 +181,8 @@ class WithdrawalAdmin(ModelAdmin):
     list_filter = (
         "chain",
         "crypto",
-        "status",
+        "review_status",
+        "tx_task__status",
         "reviewed_by",
         WithdrawalAttentionFilter,
     )
@@ -347,18 +319,29 @@ class WithdrawalAdmin(ModelAdmin):
         return hidden_fields
 
     @display(
-        description="状态",
+        description="审核",
         label={
             "审核中": "warning",
-            "待执行": "warning",
-            "确认中": "info",
-            "已完成": "success",
+            "已批准": "success",
             "已拒绝": "danger",
-            "已失败": "danger",
         },
     )
-    def display_status(self, instance: Withdrawal):
-        return instance.get_status_display()
+    def display_review_status(self, instance: Withdrawal):
+        return instance.get_review_status_display()
+
+    @display(
+        description="链上",
+        label={
+            "待广播": "warning",
+            "待上链": "warning",
+            "确认中": "info",
+            "已确认": "success",
+            "失败": "danger",
+            "-": "secondary",
+        },
+    )
+    def display_tx_status(self, instance: Withdrawal):
+        return instance.tx_status_display
 
     @display(
         description="巡检",
@@ -371,17 +354,22 @@ class WithdrawalAdmin(ModelAdmin):
         now = timezone.now()
         if (
             (
-                instance.status == WithdrawalStatus.REVIEWING
+                instance.review_status == WithdrawalReviewStatus.REVIEWING
                 and instance.updated_at
                 <= now - OperationalRiskService.reviewing_withdrawal_timeout()
             )
             or (
-                instance.status == WithdrawalStatus.PENDING
+                instance.review_status == WithdrawalReviewStatus.APPROVED
+                and instance.tx_task_id
+                and instance.tx_task.status
+                in (TxTaskStatus.QUEUED, TxTaskStatus.PENDING_CHAIN)
                 and instance.updated_at
                 <= now - OperationalRiskService.pending_withdrawal_timeout()
             )
             or (
-                instance.status == WithdrawalStatus.CONFIRMING
+                instance.review_status == WithdrawalReviewStatus.APPROVED
+                and instance.tx_task_id
+                and instance.tx_task.status == TxTaskStatus.PENDING_CONFIRM
                 and instance.updated_at
                 <= now - OperationalRiskService.confirming_withdrawal_timeout()
             )
@@ -500,8 +488,8 @@ class WithdrawalReviewLogAdmin(ReadOnlyModelAdmin):
         "project",
         "actor",
         "action",
-        "from_status",
-        "to_status",
+        "from_review_status",
+        "to_review_status",
         "created_at",
     )
     readonly_fields = (
@@ -509,8 +497,8 @@ class WithdrawalReviewLogAdmin(ReadOnlyModelAdmin):
         "project",
         "actor",
         "action",
-        "from_status",
-        "to_status",
+        "from_review_status",
+        "to_review_status",
         "note",
         "snapshot",
         "created_at",
@@ -519,4 +507,4 @@ class WithdrawalReviewLogAdmin(ReadOnlyModelAdmin):
         "withdrawal__out_no",
         "actor__username",
     )
-    list_filter = ("action", "from_status", "to_status")
+    list_filter = ("action", "from_review_status", "to_review_status")

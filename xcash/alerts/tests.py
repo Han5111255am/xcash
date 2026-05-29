@@ -26,7 +26,7 @@ from users.models import User
 from users.otp import ADMIN_OTP_VERIFIED_AT_SESSION_KEY
 from webhooks.models import WebhookEvent
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 
 _ALERT_TEST_PATCHERS = []
 
@@ -101,7 +101,7 @@ class TelegramAlertServiceTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000012",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
         Withdrawal.objects.filter(pk=withdrawal.pk).update(
             updated_at=timezone.now() - timedelta(hours=1)
@@ -148,7 +148,8 @@ class TelegramAlertServiceTests(TestCase):
         service.sync_operational_alerts()
         delay_mock.reset_mock()
         Withdrawal.objects.filter(pk=withdrawal.pk).update(
-            status=WithdrawalStatus.COMPLETED
+            review_status=WithdrawalReviewStatus.APPROVED,
+            updated_at=timezone.now(),
         )
 
         service.sync_operational_alerts()

@@ -39,7 +39,7 @@ from users.otp import ADMIN_OTP_VERIFIED_AT_SESSION_KEY
 from users.otp import build_admin_approval_context
 from withdrawals.models import Withdrawal
 from withdrawals.models import WithdrawalReviewLog
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 from withdrawals.serializers import CreateWithdrawalSerializer
 from withdrawals.service import WithdrawalService
 from withdrawals.viewsets import WithdrawalViewSet
@@ -68,7 +68,6 @@ class WithdrawalTxTaskTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000021",
-            status=WithdrawalStatus.CONFIRMING,
         )
 
         payload = WithdrawalService.build_webhook_payload(withdrawal)
@@ -156,7 +155,6 @@ class WithdrawalTxTaskTests(TestCase):
         tx_task.refresh_from_db()
         self.assertTrue(matched)
         self.assertEqual(withdrawal.transfer_id, transfer.id)
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
         self.assertEqual(transfer.type, TransferType.Withdrawal)
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
 
@@ -176,6 +174,21 @@ class WithdrawalTxTaskTests(TestCase):
             code=ChainCode.Ethereum,
             rpc="",
             active=True,
+        )
+        addr = Address.objects.create(
+            wallet=project.wallet,
+            chain_type=ChainType.EVM,
+            usage=AddressUsage.HotWallet,
+            bip44_account=1,
+            address_index=0,
+            address="0x0000000000000000000000000000000000000011",
+        )
+        tx_task = TxTask.objects.create(
+            chain=chain,
+            sender=addr,
+            tx_type=TxTaskType.Withdrawal,
+            tx_hash="0x" + "3" * 64,
+            status=TxTaskStatus.CONFIRMED,
         )
         transfer = Transfer.objects.create(
             chain=chain,
@@ -201,14 +214,15 @@ class WithdrawalTxTaskTests(TestCase):
             to="0x0000000000000000000000000000000000000012",
             hash=transfer.hash,
             transfer=transfer,
-            status=WithdrawalStatus.CONFIRMING,
+            tx_task=tx_task,
         )
 
         with self.captureOnCommitCallbacks(execute=True):
             WithdrawalService.confirm_withdrawal(transfer)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.COMPLETED)
+        tx_task.refresh_from_db()
+        self.assertEqual(tx_task.status, TxTaskStatus.CONFIRMED)
         create_event_mock.assert_called_once()
 
     def test_drop_withdrawal_reverts_pending_to_pending(self):
@@ -251,13 +265,12 @@ class WithdrawalTxTaskTests(TestCase):
             to="0x0000000000000000000000000000000000000022",
             hash=transfer.hash,
             transfer=transfer,
-            status=WithdrawalStatus.PENDING,
         )
 
         WithdrawalService.drop_withdrawal(transfer)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
 
 
@@ -624,7 +637,7 @@ class WithdrawalPolicyTests(TestCase):
             amount=Decimal("1"),
             worth=Decimal("80"),
             to="0x0000000000000000000000000000000000000022",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.assertRaises(APIError) as ctx:
@@ -789,13 +802,13 @@ class WithdrawalViewSetTests(TestCase):
             response = WithdrawalViewSet.as_view({"post": "create"})(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status"], WithdrawalStatus.REVIEWING)
+        self.assertEqual(response.data["review_status"], WithdrawalReviewStatus.REVIEWING)
         self.assertEqual(response.data["hash"], "")
         self.assertTrue(
             Withdrawal.objects.filter(
                 project=project,
                 out_no="review-order",
-                status=WithdrawalStatus.REVIEWING,
+                review_status=WithdrawalReviewStatus.REVIEWING,
             ).exists()
         )
         submit_mock.assert_not_called()
@@ -862,12 +875,14 @@ class WithdrawalViewSetTests(TestCase):
             response = WithdrawalViewSet.as_view({"post": "create"})(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status"], WithdrawalStatus.PENDING)
+        self.assertEqual(
+            response.data["review_status"], WithdrawalReviewStatus.APPROVED
+        )
         self.assertTrue(
             Withdrawal.objects.filter(
                 project=project,
                 out_no="exempt-review-order",
-                status=WithdrawalStatus.PENDING,
+                review_status=WithdrawalReviewStatus.APPROVED,
             ).exists()
         )
         submit_mock.assert_called_once()
@@ -933,12 +948,12 @@ class WithdrawalViewSetTests(TestCase):
             response = WithdrawalViewSet.as_view({"post": "create"})(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data["status"], WithdrawalStatus.REVIEWING)
+        self.assertEqual(response.data["review_status"], WithdrawalReviewStatus.REVIEWING)
         self.assertTrue(
             Withdrawal.objects.filter(
                 project=project,
                 out_no="equal-review-order",
-                status=WithdrawalStatus.REVIEWING,
+                review_status=WithdrawalReviewStatus.REVIEWING,
             ).exists()
         )
         submit_mock.assert_not_called()
@@ -1062,13 +1077,13 @@ class WithdrawalReviewTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         def mark_pending(*, withdrawal):
-            withdrawal.status = WithdrawalStatus.PENDING
+            withdrawal.review_status = WithdrawalReviewStatus.APPROVED
             withdrawal.hash = "0x" + "b" * 64
-            withdrawal.save(update_fields=["status", "hash", "updated_at"])
+            withdrawal.save(update_fields=["review_status", "hash", "updated_at"])
             return withdrawal
 
         submit_mock.side_effect = mark_pending
@@ -1080,7 +1095,7 @@ class WithdrawalReviewTests(TestCase):
         )
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(withdrawal.reviewed_by, owner)
         self.assertIsNotNone(withdrawal.reviewed_at)
         submit_mock.assert_called_once()
@@ -1109,7 +1124,7 @@ class WithdrawalReviewTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.assertRaises(PermissionError):
@@ -1145,15 +1160,15 @@ class WithdrawalReviewTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with patch.object(WithdrawalService, "submit_withdrawal") as submit_mock:
 
             def mark_pending(*, withdrawal):
-                withdrawal.status = WithdrawalStatus.PENDING
+                withdrawal.review_status = WithdrawalReviewStatus.APPROVED
                 withdrawal.hash = "0x" + "d" * 64
-                withdrawal.save(update_fields=["status", "hash", "updated_at"])
+                withdrawal.save(update_fields=["review_status", "hash", "updated_at"])
                 return withdrawal
 
             submit_mock.side_effect = mark_pending
@@ -1164,7 +1179,7 @@ class WithdrawalReviewTests(TestCase):
             )
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(withdrawal.reviewed_by, owner)
 
     @patch.object(WithdrawalService, "submit_withdrawal")
@@ -1196,13 +1211,13 @@ class WithdrawalReviewTests(TestCase):
             amount=Decimal("1.5"),
             worth=Decimal("33.25"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         def mark_pending(*, withdrawal):
-            withdrawal.status = WithdrawalStatus.PENDING
+            withdrawal.review_status = WithdrawalReviewStatus.APPROVED
             withdrawal.hash = "0x" + "c" * 64
-            withdrawal.save(update_fields=["status", "hash", "updated_at"])
+            withdrawal.save(update_fields=["review_status", "hash", "updated_at"])
             return withdrawal
 
         submit_mock.side_effect = mark_pending
@@ -1217,8 +1232,8 @@ class WithdrawalReviewTests(TestCase):
         log = WithdrawalReviewLog.objects.get(withdrawal=withdrawal)
         self.assertEqual(log.actor, owner)
         self.assertEqual(log.action, WithdrawalReviewLog.Action.APPROVED)
-        self.assertEqual(log.from_status, WithdrawalStatus.REVIEWING)
-        self.assertEqual(log.to_status, WithdrawalStatus.PENDING)
+        self.assertEqual(log.from_review_status, WithdrawalReviewStatus.REVIEWING)
+        self.assertEqual(log.to_review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(log.note, "人工复核通过")
         self.assertEqual(log.snapshot["out_no"], withdrawal.out_no)
         self.assertEqual(
@@ -1252,7 +1267,7 @@ class WithdrawalReviewTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.assertRaises(PermissionError):
@@ -1287,7 +1302,7 @@ class WithdrawalReviewTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.assertRaises(PermissionError):
@@ -1352,13 +1367,13 @@ class WithdrawalRemoteSignerFlowTests(TestCase):
             crypto=crypto,
             amount=Decimal("1"),
             to=Web3.to_checksum_address("0x000000000000000000000000000000000000f002"),
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         submitted = WithdrawalService.submit_withdrawal(withdrawal=withdrawal)
 
         submitted.refresh_from_db()
-        self.assertEqual(submitted.status, WithdrawalStatus.PENDING)
+        self.assertEqual(submitted.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(submitted.hash)
         self.assertIsNotNone(submitted.tx_task_id)
         signer_backend.derive_address.assert_called_once()
@@ -1405,7 +1420,7 @@ class WithdrawalRejectTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -1417,7 +1432,7 @@ class WithdrawalRejectTests(TestCase):
             )
 
         result.refresh_from_db()
-        self.assertEqual(result.status, WithdrawalStatus.REJECTED)
+        self.assertEqual(result.review_status, WithdrawalReviewStatus.REJECTED)
         self.assertEqual(result.reviewed_by, self.owner)
         self.assertIsNotNone(result.reviewed_at)
         webhook_mock.assert_not_called()
@@ -1433,7 +1448,7 @@ class WithdrawalRejectTests(TestCase):
             amount=Decimal("2.5"),
             worth=Decimal("50"),
             to="0x0000000000000000000000000000000000000022",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.captureOnCommitCallbacks(execute=True):
@@ -1447,8 +1462,8 @@ class WithdrawalRejectTests(TestCase):
         log = WithdrawalReviewLog.objects.get(withdrawal=withdrawal)
         self.assertEqual(log.actor, self.owner)
         self.assertEqual(log.action, WithdrawalReviewLog.Action.REJECTED)
-        self.assertEqual(log.from_status, WithdrawalStatus.REVIEWING)
-        self.assertEqual(log.to_status, WithdrawalStatus.REJECTED)
+        self.assertEqual(log.from_review_status, WithdrawalReviewStatus.REVIEWING)
+        self.assertEqual(log.to_review_status, WithdrawalReviewStatus.REJECTED)
         self.assertEqual(log.note, "金额异常")
         # amount 通过 format_decimal_stripped 格式化，断言字符串包含数值即可
         self.assertIn("2.5", log.snapshot["amount"])
@@ -1463,7 +1478,7 @@ class WithdrawalRejectTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000033",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         with self.assertRaises(PermissionError):
@@ -1482,7 +1497,6 @@ class WithdrawalRejectTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000044",
-            status=WithdrawalStatus.PENDING,
         )
 
         with self.assertRaises(ValueError):
@@ -1501,7 +1515,7 @@ class WithdrawalRejectTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000055",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         result = WithdrawalService.reject_withdrawal(
@@ -1511,7 +1525,7 @@ class WithdrawalRejectTests(TestCase):
         )
 
         result.refresh_from_db()
-        self.assertEqual(result.status, WithdrawalStatus.REJECTED)
+        self.assertEqual(result.review_status, WithdrawalReviewStatus.REJECTED)
         self.assertEqual(result.reviewed_by, self.owner)
 
 
@@ -1547,9 +1561,32 @@ class WithdrawalStateTransitionTests(TestCase):
         WithdrawalStateTransitionTests._hash_counter += 1
         return "0x" + hex(self._hash_counter)[2:].zfill(64)
 
-    def _make_withdrawal_with_transfer(self, *, status, out_no):
+    def _make_withdrawal_with_transfer(
+        self,
+        *,
+        tx_status,
+        out_no,
+        review_status=WithdrawalReviewStatus.APPROVED,
+    ):
         """创建带 transfer 的提币单，用于 confirm/drop 测试。"""
         tx_hash = self._next_hash()
+        addr = Address.objects.create(
+            wallet=self.wallet,
+            chain_type=ChainType.EVM,
+            usage=AddressUsage.HotWallet,
+            bip44_account=1,
+            address_index=WithdrawalStateTransitionTests._hash_counter,
+            address=Web3.to_checksum_address(
+                "0x" + hex(0xB0 + WithdrawalStateTransitionTests._hash_counter)[2:].zfill(40)
+            ),
+        )
+        tx_task = TxTask.objects.create(
+            chain=self.chain,
+            sender=addr,
+            tx_type=TxTaskType.Withdrawal,
+            tx_hash=tx_hash,
+            status=tx_status,
+        )
         transfer = Transfer.objects.create(
             chain=self.chain,
             block=1,
@@ -1571,33 +1608,36 @@ class WithdrawalStateTransitionTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=status,
+            review_status=review_status,
             transfer=transfer,
+            tx_task=tx_task,
         )
-        return withdrawal, transfer
+        return withdrawal, transfer, tx_task
 
     # --- confirm_withdrawal 异常路径 ---
 
     def test_confirm_already_completed_is_idempotent(self):
         """已完成的提币收到重复确认应幂等跳过，不抛异常。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.COMPLETED, out_no="confirm-completed"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.CONFIRMED, out_no="confirm-completed"
         )
-        # 不应抛异常，静默跳过
+        # 直接调用 service 仍会执行确认通知；生产入口由 Transfer.confirm() 保证幂等。
         WithdrawalService.confirm_withdrawal(transfer)
 
     def test_confirm_pending_raises_value_error(self):
         """PENDING 状态的提币不能直接确认，必须先经过 CONFIRMING。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.PENDING, out_no="confirm-pending"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.PENDING_CHAIN, out_no="confirm-pending"
         )
         with self.assertRaises(ValueError):
             WithdrawalService.confirm_withdrawal(transfer)
 
     def test_confirm_rejected_raises_value_error(self):
         """已拒绝的提币不能确认。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.REJECTED, out_no="confirm-rejected"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.CONFIRMED,
+            review_status=WithdrawalReviewStatus.REJECTED,
+            out_no="confirm-rejected",
         )
         with self.assertRaises(ValueError):
             WithdrawalService.confirm_withdrawal(transfer)
@@ -1605,65 +1645,68 @@ class WithdrawalStateTransitionTests(TestCase):
     @patch("withdrawals.service.WebhookService.create_event")
     def test_confirm_confirming_succeeds(self, webhook_mock):
         """CONFIRMING → COMPLETED 是正常路径，确认后触发 Webhook。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.CONFIRMING, out_no="confirm-ok"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.CONFIRMED, out_no="confirm-ok"
         )
         with self.captureOnCommitCallbacks(execute=True):
             WithdrawalService.confirm_withdrawal(transfer)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.COMPLETED)
+        tx_task.refresh_from_db()
+        self.assertEqual(tx_task.status, TxTaskStatus.CONFIRMED)
         webhook_mock.assert_called_once()
 
     # --- drop_withdrawal 异常路径 ---
 
     def test_drop_already_rejected_is_idempotent(self):
         """已拒绝的提币收到重复 drop 应幂等跳过。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.REJECTED, out_no="drop-rejected"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.PENDING_CONFIRM,
+            review_status=WithdrawalReviewStatus.REJECTED,
+            out_no="drop-rejected",
         )
         # 不应抛异常
         WithdrawalService.drop_withdrawal(transfer)
 
     def test_drop_already_failed_is_idempotent(self):
         """已失败的提币收到 drop 应幂等跳过。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.FAILED, out_no="drop-failed"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.FAILED, out_no="drop-failed"
         )
         WithdrawalService.drop_withdrawal(transfer)
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.FAILED)
+        self.assertEqual(withdrawal.transfer_id, transfer.id)
 
     def test_drop_completed_is_idempotent(self):
         """已完成的提币收到 drop（链 reorg 场景）应幂等跳过，不抛异常。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.COMPLETED, out_no="drop-completed"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.CONFIRMED, out_no="drop-completed"
         )
         # 不应抛异常，应静默跳过
         WithdrawalService.drop_withdrawal(transfer)
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.COMPLETED)
+        self.assertEqual(withdrawal.transfer_id, transfer.id)
 
     def test_drop_pending_reverts_to_pending(self):
         """PENDING 状态的提币被 drop 后应保持 PENDING 并清除 transfer 关联。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.PENDING, out_no="drop-pending"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.PENDING_CHAIN, out_no="drop-pending"
         )
         WithdrawalService.drop_withdrawal(transfer)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
 
     def test_drop_confirming_reverts_to_pending(self):
         """CONFIRMING 状态的提币被 drop 后应回退到 PENDING 并清除 transfer 关联。"""
-        withdrawal, transfer = self._make_withdrawal_with_transfer(
-            status=WithdrawalStatus.CONFIRMING, out_no="drop-confirming"
+        withdrawal, transfer, tx_task = self._make_withdrawal_with_transfer(
+            tx_status=TxTaskStatus.PENDING_CONFIRM, out_no="drop-confirming"
         )
         WithdrawalService.drop_withdrawal(transfer)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
 
     def test_drop_withdrawal_does_not_finalize_tx_task(self):
@@ -1705,7 +1748,6 @@ class WithdrawalStateTransitionTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=WithdrawalStatus.PENDING,
             transfer=transfer,
             tx_task=tx_task,
         )
@@ -1714,7 +1756,7 @@ class WithdrawalStateTransitionTests(TestCase):
 
         # Withdrawal 回退到 PENDING，清除 transfer 关联
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
 
         # TxTask 状态不应被 drop_withdrawal 修改, 保持原状
@@ -1723,7 +1765,13 @@ class WithdrawalStateTransitionTests(TestCase):
 
     # --- fail_withdrawal 测试 ---
 
-    def _make_withdrawal_with_tx_task(self, *, status, out_no):
+    def _make_withdrawal_with_tx_task(
+        self,
+        *,
+        tx_status,
+        out_no,
+        review_status=WithdrawalReviewStatus.APPROVED,
+    ):
         """创建带 tx_task 的提币单，用于 fail_withdrawal 测试。"""
         tx_hash = self._next_hash()
         addr = Address.objects.create(
@@ -1739,7 +1787,7 @@ class WithdrawalStateTransitionTests(TestCase):
             sender=addr,
             tx_type=TxTaskType.Withdrawal,
             tx_hash=tx_hash,
-            status=TxTaskStatus.FAILED,
+            status=tx_status,
         )
         withdrawal = Withdrawal.objects.create(
             project=self.project,
@@ -1748,7 +1796,7 @@ class WithdrawalStateTransitionTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=status,
+            review_status=review_status,
             tx_task=tx_task,
         )
         return withdrawal, tx_task
@@ -1757,13 +1805,13 @@ class WithdrawalStateTransitionTests(TestCase):
     def test_fail_pending_sets_failed(self, webhook_mock):
         """PENDING 状态的提币在 TxTask 确认失败后应终局为 FAILED，且不发 Webhook。"""
         withdrawal, tx_task = self._make_withdrawal_with_tx_task(
-            status=WithdrawalStatus.PENDING, out_no="fail-pending"
+            tx_status=TxTaskStatus.FAILED, out_no="fail-pending"
         )
         with self.captureOnCommitCallbacks(execute=True):
             WithdrawalService.fail_withdrawal(tx_task=tx_task)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.FAILED)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer_id)
         webhook_mock.assert_not_called()
 
@@ -1771,41 +1819,43 @@ class WithdrawalStateTransitionTests(TestCase):
     def test_fail_confirming_sets_failed(self, webhook_mock):
         """CONFIRMING 状态的提币在 TxTask 确认失败后应终局为 FAILED，且不发 Webhook。"""
         withdrawal, tx_task = self._make_withdrawal_with_tx_task(
-            status=WithdrawalStatus.CONFIRMING, out_no="fail-confirming"
+            tx_status=TxTaskStatus.FAILED, out_no="fail-confirming"
         )
         with self.captureOnCommitCallbacks(execute=True):
             WithdrawalService.fail_withdrawal(tx_task=tx_task)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.FAILED)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         webhook_mock.assert_not_called()
 
     def test_fail_completed_is_idempotent(self):
         """已完成的提币收到 fail 应幂等跳过。"""
         withdrawal, tx_task = self._make_withdrawal_with_tx_task(
-            status=WithdrawalStatus.COMPLETED, out_no="fail-completed"
+            tx_status=TxTaskStatus.CONFIRMED, out_no="fail-completed"
         )
         WithdrawalService.fail_withdrawal(tx_task=tx_task)
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.COMPLETED)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
 
     def test_fail_already_failed_is_idempotent(self):
         """已失败的提币收到重复 fail 应幂等跳过。"""
         withdrawal, tx_task = self._make_withdrawal_with_tx_task(
-            status=WithdrawalStatus.FAILED, out_no="fail-already-failed"
+            tx_status=TxTaskStatus.FAILED, out_no="fail-already-failed"
         )
         WithdrawalService.fail_withdrawal(tx_task=tx_task)
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.FAILED)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
 
     def test_fail_rejected_is_idempotent(self):
         """已审核拒绝的提币收到 fail 应幂等跳过。"""
         withdrawal, tx_task = self._make_withdrawal_with_tx_task(
-            status=WithdrawalStatus.REJECTED, out_no="fail-rejected"
+            tx_status=TxTaskStatus.FAILED,
+            review_status=WithdrawalReviewStatus.REJECTED,
+            out_no="fail-rejected",
         )
         WithdrawalService.fail_withdrawal(tx_task=tx_task)
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.REJECTED)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.REJECTED)
 
     def test_fail_no_matching_withdrawal_is_noop(self):
         """TxTask 无对应提币时 fail_withdrawal 应静默跳过。"""
@@ -1831,7 +1881,9 @@ class WithdrawalStateTransitionTests(TestCase):
     def test_fail_reviewing_raises_value_error(self):
         """REVIEWING 状态的提币不应通过 fail_withdrawal 处理。"""
         withdrawal, tx_task = self._make_withdrawal_with_tx_task(
-            status=WithdrawalStatus.REVIEWING, out_no="fail-reviewing"
+            tx_status=TxTaskStatus.FAILED,
+            review_status=WithdrawalReviewStatus.REVIEWING,
+            out_no="fail-reviewing",
         )
         with self.assertRaises(ValueError):
             WithdrawalService.fail_withdrawal(tx_task=tx_task)
@@ -1936,7 +1988,6 @@ class WithdrawalTryMatchTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=WithdrawalStatus.PENDING,
             tx_task=tx_task,
             hash=tx_hash,
         )
@@ -1950,7 +2001,7 @@ class WithdrawalTryMatchTests(TestCase):
         self.assertFalse(result)
 
     def test_match_returns_false_when_not_pending(self):
-        """非 PENDING 状态的提币收到重复匹配事件应静默跳过。"""
+        """未批准的提币收到重复匹配事件应静默跳过。"""
         tx_hash = self._next_hash()
         tx_task = self._make_tx_task(tx_hash=tx_hash, status=TxTaskStatus.PENDING_CONFIRM)
         transfer = self._make_transfer(tx_hash=tx_hash)
@@ -1961,7 +2012,7 @@ class WithdrawalTryMatchTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=WithdrawalStatus.CONFIRMING,
+            review_status=WithdrawalReviewStatus.REJECTED,
             tx_task=tx_task,
             hash=tx_hash,
             transfer=transfer,
@@ -1982,7 +2033,6 @@ class WithdrawalTryMatchTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=WithdrawalStatus.PENDING,
             tx_task=tx_task,
             hash=tx_hash,
         )
@@ -1992,7 +2042,6 @@ class WithdrawalTryMatchTests(TestCase):
         self.assertTrue(result)
 
         withdrawal = Withdrawal.objects.get(out_no="match-success")
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
         self.assertEqual(withdrawal.transfer, transfer)
 
         tx_task.refresh_from_db()
@@ -2013,7 +2062,6 @@ class WithdrawalTryMatchTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=WithdrawalStatus.PENDING,
             tx_task=tx_task,
             hash=tx_hash,
         )
@@ -2038,7 +2086,6 @@ class WithdrawalTryMatchTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000002",
-            status=WithdrawalStatus.PENDING,
             tx_task=tx_task,
             hash=old_hash,
         )
@@ -2048,7 +2095,7 @@ class WithdrawalTryMatchTests(TestCase):
 
         self.assertTrue(result)
         withdrawal = Withdrawal.objects.get(out_no="match-old-hash")
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.transfer, transfer)
         tx_task.refresh_from_db()
         self.assertEqual(tx_task.tx_hash, old_hash)
 
@@ -2170,7 +2217,7 @@ class WithdrawalBalanceAndPolicyEdgeCaseTests(TestCase):
             amount=Decimal("1"),
             worth=Decimal("70"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.PENDING,
+            review_status=WithdrawalReviewStatus.APPROVED,
         )
 
         # 本笔 30 USD → 总计 100 = 刚好等于限额，应通过
@@ -2213,7 +2260,7 @@ class WithdrawalBalanceAndPolicyEdgeCaseTests(TestCase):
             amount=Decimal("1"),
             worth=Decimal("70"),
             to="0x0000000000000000000000000000000000000011",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
 
         # 本笔 30.01 → 总计 100.01 > 100

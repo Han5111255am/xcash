@@ -8,13 +8,14 @@ if TYPE_CHECKING:
     from datetime import timedelta
 from django.utils import timezone
 
+from chains.models import TxTaskStatus
 from core.runtime_settings import get_confirming_withdrawal_timeout
 from core.runtime_settings import get_pending_withdrawal_timeout
 from core.runtime_settings import get_reviewing_withdrawal_timeout
 from core.runtime_settings import get_webhook_event_timeout
 from webhooks.models import WebhookEvent
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 
 
 class OperationalRiskService:
@@ -41,18 +42,23 @@ class OperationalRiskService:
         now = timezone.now()
         return Withdrawal.objects.filter(
             Q(
-                status=WithdrawalStatus.REVIEWING,
+                review_status=WithdrawalReviewStatus.REVIEWING,
                 updated_at__lte=now - cls.reviewing_withdrawal_timeout(),
             )
             | Q(
-                status=WithdrawalStatus.PENDING,
+                review_status=WithdrawalReviewStatus.APPROVED,
+                tx_task__status__in=(
+                    TxTaskStatus.QUEUED,
+                    TxTaskStatus.PENDING_CHAIN,
+                ),
                 updated_at__lte=now - cls.pending_withdrawal_timeout(),
             )
             | Q(
-                status=WithdrawalStatus.CONFIRMING,
+                review_status=WithdrawalReviewStatus.APPROVED,
+                tx_task__status=TxTaskStatus.PENDING_CONFIRM,
                 updated_at__lte=now - cls.confirming_withdrawal_timeout(),
             )
-        ).select_related("project", "crypto", "chain")
+        ).select_related("project", "crypto", "chain", "tx_task")
 
     @classmethod
     def stalled_webhook_events(cls):
@@ -70,13 +76,16 @@ class OperationalRiskService:
 
         return {
             "reviewing_withdrawal_count": stalled_withdrawals.filter(
-                status=WithdrawalStatus.REVIEWING
+                review_status=WithdrawalReviewStatus.REVIEWING
             ).count(),
             "pending_withdrawal_count": stalled_withdrawals.filter(
-                status=WithdrawalStatus.PENDING
+                tx_task__status__in=(
+                    TxTaskStatus.QUEUED,
+                    TxTaskStatus.PENDING_CHAIN,
+                )
             ).count(),
             "confirming_withdrawal_count": stalled_withdrawals.filter(
-                status=WithdrawalStatus.CONFIRMING
+                tx_task__status=TxTaskStatus.PENDING_CONFIRM
             ).count(),
             "stalled_withdrawal_count": stalled_withdrawals.count(),
             "stalled_webhook_event_count": stalled_webhook_events.count(),

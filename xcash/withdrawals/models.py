@@ -6,41 +6,13 @@ from common.fields import HashField
 from common.fields import SysNoField
 
 
-class HotWalletFunding(models.Model):
-    project = models.ForeignKey(
-        "projects.Project",
-        on_delete=models.PROTECT,
-        verbose_name=_("项目"),
-    )
-    transfer = models.OneToOneField(
-        "chains.Transfer",
-        on_delete=models.SET_NULL,
-        verbose_name=_("链上转账"),
-        blank=True,
-        null=True,
-    )
-
-    class Meta:
-        verbose_name = _("热钱包注资")
-        verbose_name_plural = _("热钱包注资")
-
-    def __str__(self):
-        return f"{self.project_id}:{self.transfer_id}"
-
-
-class WithdrawalStatus(models.TextChoices):
-    # 提币请求已创建，等待人工审核
+class WithdrawalReviewStatus(models.TextChoices):
+    # 提币请求已创建，等待人工审核。
     REVIEWING = "reviewing", _("审核中")
-    # 审核通过（或免审核），等待链上任务执行
-    PENDING = "pending", _("待执行")
-    # 交易已上链，等待区块链确认数达标
-    CONFIRMING = "confirming", _("确认中")
-    # 交易确认数达标，提币成功
-    COMPLETED = "completed", _("已完成")
-    # 人工审核拒绝（管理员在 REVIEWING 阶段主动拒绝）
+    # 审核通过或项目策略自动放行；链上进度由 tx_task.status 表达。
+    APPROVED = "approved", _("已批准")
+    # 人工审核拒绝。
     REJECTED = "rejected", _("已拒绝")
-    # 链上交易最终失败（TxTask 进入 FAILED 终局）
-    FAILED = "failed", _("已失败")
 
 
 class Withdrawal(models.Model):
@@ -88,10 +60,10 @@ class Withdrawal(models.Model):
         blank=True,
         null=True,
     )
-    status = models.CharField(
-        choices=WithdrawalStatus,
-        default=WithdrawalStatus.PENDING,
-        verbose_name=_("状态"),
+    review_status = models.CharField(
+        choices=WithdrawalReviewStatus,
+        default=WithdrawalReviewStatus.APPROVED,
+        verbose_name=_("审核状态"),
     )
     reviewed_by = models.ForeignKey(
         "users.User",
@@ -129,6 +101,18 @@ class Withdrawal(models.Model):
         return self.out_no
 
     @property
+    def tx_status(self) -> str:
+        if not self.tx_task_id:
+            return ""
+        return self.tx_task.status
+
+    @property
+    def tx_status_display(self) -> str:
+        if not self.tx_task_id:
+            return "-"
+        return self.tx_task.get_status_display()
+
+    @property
     def content(self):
         from withdrawals.service import WithdrawalService
 
@@ -161,13 +145,13 @@ class WithdrawalReviewLog(models.Model):
         choices=Action,
         verbose_name=_("操作"),
     )
-    from_status = models.CharField(
-        choices=WithdrawalStatus,
-        verbose_name=_("原状态"),
+    from_review_status = models.CharField(
+        choices=WithdrawalReviewStatus,
+        verbose_name=_("原审核状态"),
     )
-    to_status = models.CharField(
-        choices=WithdrawalStatus,
-        verbose_name=_("目标状态"),
+    to_review_status = models.CharField(
+        choices=WithdrawalReviewStatus,
+        verbose_name=_("目标审核状态"),
     )
     note = models.TextField(_("备注"), blank=True, default="")
     snapshot = models.JSONField(_("快照"), default=dict, blank=True)

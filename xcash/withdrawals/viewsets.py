@@ -18,7 +18,7 @@ from currencies.service import CryptoService
 from projects.models import Project
 from users.models import Customer
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 from withdrawals.serializers import CreateWithdrawalSerializer
 from withdrawals.service import WithdrawalService
 
@@ -100,10 +100,10 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
                 crypto=crypto,
                 amount=amount,
                 worth=worth,
-                status=(
-                    WithdrawalStatus.REVIEWING
+                review_status=(
+                    WithdrawalReviewStatus.REVIEWING
                     if should_require_review
-                    else WithdrawalStatus.PENDING
+                    else WithdrawalReviewStatus.APPROVED
                 ),
             )
         except IntegrityError as exc:
@@ -125,7 +125,8 @@ class WithdrawalViewSet(viewsets.ModelViewSet):
             {
                 "sys_no": withdrawal.sys_no,
                 "hash": withdrawal.hash or "",
-                "status": withdrawal.status,
+                "review_status": withdrawal.review_status,
+                "tx_status": withdrawal.tx_status,
             },
             status=status.HTTP_200_OK,
         )

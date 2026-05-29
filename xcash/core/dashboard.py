@@ -362,19 +362,19 @@ def dashboard_callback(request, context):
             "label": _("审核中提币"),
             "value": snapshot["reviewing_withdrawal_count"],
             "detail": _("等待人工审核"),
-            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?status__exact=reviewing",
+            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?review_status__exact=reviewing",
         },
         {
             "label": _("待执行提币"),
             "value": snapshot["pending_withdrawal_count"],
             "detail": _("等待系统构建/广播"),
-            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?status__exact=pending",
+            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?tx_task__status__exact=pending_chain",
         },
         {
             "label": _("确认中提币"),
             "value": snapshot["confirming_withdrawal_count"],
             "detail": _("链上已上链，等待确认"),
-            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?status__exact=confirming",
+            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?tx_task__status__exact=pending_confirm",
         },
         {
             "label": _("待投递事件"),

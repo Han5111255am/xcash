@@ -16,7 +16,7 @@ from alerts.models import ProjectAlertStatus
 from alerts.models import ProjectTelegramAlertConfig
 from core.monitoring import OperationalRiskService
 from core.runtime_settings import get_alerts_repeat_interval_minutes
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 
 
 class TelegramAlertError(Exception):
@@ -81,7 +81,7 @@ class TelegramAlertService:
                 object_pk=withdrawal.pk,
                 severity=(
                     ProjectAlertSeverity.CRITICAL
-                    if withdrawal.status != WithdrawalStatus.REVIEWING
+                    if withdrawal.review_status != WithdrawalReviewStatus.REVIEWING
                     else ProjectAlertSeverity.HIGH
                 ),
                 title=str(_("提币长时间未完成")),
@@ -89,7 +89,7 @@ class TelegramAlertService:
                     _("%(out_no)s / %(status)s / %(crypto)s-%(chain)s")
                     % {
                         "out_no": withdrawal.out_no,
-                        "status": withdrawal.get_status_display(),
+                        "status": withdrawal.tx_status_display,
                         "crypto": withdrawal.crypto.symbol,
                         "chain": withdrawal.chain.code if withdrawal.chain else "-",
                     }

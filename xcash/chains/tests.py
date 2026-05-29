@@ -50,6 +50,7 @@ from currencies.models import Crypto
 from evm.choices import TxKind
 from evm.constants import DEFAULT_BASE_TRANSFER_GAS
 from evm.constants import DEFAULT_ERC20_TRANSFER_GAS
+from withdrawals.models import WithdrawalReviewStatus
 
 
 class TransferMatchingTests(TestCase):
@@ -597,7 +598,6 @@ class TransferConfirmDispatchTests(TestCase):
     def _create_withdrawal_transfer_fixture(self, *, tx_hash: str):
         from projects.models import Project
         from withdrawals.models import Withdrawal
-        from withdrawals.models import WithdrawalStatus
 
         project = Project.objects.create(
             name=f"project-{tx_hash[-6:]}",
@@ -606,7 +606,7 @@ class TransferConfirmDispatchTests(TestCase):
         )
         tx_task = TxTask.objects.create(
             chain=self.chain,
-            address=self.addr,
+            sender=self.addr,
             tx_type=TxTaskType.Withdrawal,
             tx_hash=tx_hash,
             status=TxTaskStatus.PENDING_CONFIRM,
@@ -620,7 +620,6 @@ class TransferConfirmDispatchTests(TestCase):
             out_no=f"out-{tx_hash[-6:]}",
             to=Web3.to_checksum_address("0x00000000000000000000000000000000000000c3"),
             tx_task=tx_task,
-            status=WithdrawalStatus.CONFIRMING,
         )
         transfer = Transfer.objects.create(
             chain=self.chain,
@@ -812,7 +811,6 @@ class TransferConfirmDispatchTests(TestCase):
     ):
         from chains.adapters import TxCheckStatus
         from chains.tasks import confirm_transfer
-        from withdrawals.models import WithdrawalStatus
 
         transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
             tx_hash="0x" + "f" * 64
@@ -827,7 +825,7 @@ class TransferConfirmDispatchTests(TestCase):
             confirm_transfer.run(transfer.pk)
 
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(withdrawal.transfer_id, transfer.pk)
         tx_task.refresh_from_db()
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
@@ -841,7 +839,6 @@ class TransferConfirmDispatchTests(TestCase):
         from chains.adapters import TxCheckResult
         from chains.adapters import TxCheckStatus
         from chains.tasks import confirm_transfer
-        from withdrawals.models import WithdrawalStatus
 
         transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
             tx_hash="0x" + "b" * 64
@@ -862,7 +859,7 @@ class TransferConfirmDispatchTests(TestCase):
         self.assertEqual(transfer.block, 120)
         self.assertEqual(transfer.block_hash, "0x" + "12" * 32)
         self.assertEqual(transfer.status, TransferStatus.CONFIRMING)
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
 
     @patch("common.decorators.cache.delete", return_value=True)
@@ -874,7 +871,6 @@ class TransferConfirmDispatchTests(TestCase):
         from chains.adapters import TxCheckResult
         from chains.adapters import TxCheckStatus
         from chains.tasks import confirm_transfer
-        from withdrawals.models import WithdrawalStatus
 
         transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
             tx_hash="0x" + "c" * 64
@@ -898,7 +894,7 @@ class TransferConfirmDispatchTests(TestCase):
         self.assertEqual(transfer.block, 100)
         self.assertEqual(transfer.block_hash, "0x" + "22" * 32)
         self.assertEqual(transfer.status, TransferStatus.CONFIRMING)
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
 
     @patch("common.decorators.cache.delete", return_value=True)
@@ -909,7 +905,6 @@ class TransferConfirmDispatchTests(TestCase):
     ):
         from chains.adapters import TxCheckStatus
         from chains.tasks import confirm_transfer
-        from withdrawals.models import WithdrawalStatus
 
         transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
             tx_hash="0x" + "d" * 64
@@ -928,7 +923,7 @@ class TransferConfirmDispatchTests(TestCase):
         retry_mock.assert_called_once()
         self.assertTrue(Transfer.objects.filter(pk=transfer.pk).exists())
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.CONFIRMING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertEqual(withdrawal.transfer_id, transfer.pk)
         tx_task.refresh_from_db()
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
@@ -941,7 +936,6 @@ class TransferConfirmDispatchTests(TestCase):
     ):
         from chains.adapters import TxCheckStatus
         from chains.tasks import confirm_transfer
-        from withdrawals.models import WithdrawalStatus
 
         transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
             tx_hash="0x" + "c" * 64
@@ -959,7 +953,7 @@ class TransferConfirmDispatchTests(TestCase):
 
         self.assertFalse(Transfer.objects.filter(pk=transfer.pk).exists())
         withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.status, WithdrawalStatus.PENDING)
+        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
         self.assertIsNone(withdrawal.transfer)
         tx_task.refresh_from_db()
         self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CHAIN)

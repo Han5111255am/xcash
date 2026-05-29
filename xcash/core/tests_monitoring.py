@@ -33,7 +33,7 @@ from users.models import User
 from users.otp import ADMIN_OTP_VERIFIED_AT_SESSION_KEY
 from webhooks.models import WebhookEvent
 from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalStatus
+from withdrawals.models import WithdrawalReviewStatus
 
 
 class OperationalRiskServiceTests(TestCase):
@@ -84,7 +84,7 @@ class OperationalRiskServiceTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000012",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
         Deposit.objects.create(
             customer=self.customer,
@@ -123,7 +123,7 @@ class OperationalRiskServiceTests(TestCase):
             crypto=self.crypto,
             amount=Decimal("1"),
             to="0x0000000000000000000000000000000000000013",
-            status=WithdrawalStatus.REVIEWING,
+            review_status=WithdrawalReviewStatus.REVIEWING,
         )
         Withdrawal.objects.filter(pk=withdrawal.pk).update(
             updated_at=timezone.now() - timedelta(minutes=10)

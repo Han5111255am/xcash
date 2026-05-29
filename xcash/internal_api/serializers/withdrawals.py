@@ -22,6 +22,7 @@ class InternalWithdrawalCreateSerializer(serializers.Serializer):
 
 class InternalWithdrawalDetailSerializer(serializers.ModelSerializer):
     tx = TransferSerializer(source="transfer", read_only=True)
+    tx_status = serializers.CharField(read_only=True)
     crypto = serializers.SlugRelatedField(slug_field="symbol", read_only=True)
     chain = serializers.SlugRelatedField(slug_field="code", read_only=True)
     uid = serializers.CharField(source="customer.uid", read_only=True, default="")
@@ -39,7 +40,8 @@ class InternalWithdrawalDetailSerializer(serializers.ModelSerializer):
             "amount",
             "worth",
             "hash",
-            "status",
+            "review_status",
+            "tx_status",
             "tx",
             "reviewed_by",
             "reviewed_at",
