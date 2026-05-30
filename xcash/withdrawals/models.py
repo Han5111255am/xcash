@@ -20,7 +20,7 @@ class Withdrawal(models.Model):
     customer = models.ForeignKey(
         "users.Customer",
         on_delete=models.PROTECT,
-        verbose_name=_("用户"),
+        verbose_name=_("客户"),
         blank=True,
         null=True,
     )

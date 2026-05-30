@@ -47,23 +47,6 @@ class ProjectService:
         )
 
     @staticmethod
-    def primary_invoice_recipient(
-        *,
-        project: Project,
-        chain_type: str,
-    ) -> DifferRecipientAddress | None:
-        """取指定链类型下最早创建的差额账单收款地址。"""
-        return (
-            ProjectService.invoice_recipients(project, chain_type=chain_type)
-            .order_by("created_at", "id")
-            .first()
-        )
-
-    @staticmethod
-    def has_invoice_recipient(project: Project) -> bool:
-        return ProjectService.invoice_recipients(project).exists()
-
-    @staticmethod
     def differ_receivable_chain_codes(project: Project) -> set[str]:
         """差额（DIFFER）模式下项目可收款的链 code 集合。
 

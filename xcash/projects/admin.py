@@ -123,9 +123,9 @@ class ProjectForm(forms.ModelForm):
                 )
             return Web3.to_checksum_address(old_address)
 
-        evm_chains = Chain.objects.filter(
-            type=ChainType.EVM, active=True
-        ).exclude(rpc="")
+        evm_chains = Chain.objects.filter(type=ChainType.EVM, active=True).exclude(
+            rpc=""
+        )
         if not evm_chains.exists():
             raise forms.ValidationError(_("没有可用于校验合约地址的已启用 EVM 链。"))
 
@@ -692,15 +692,14 @@ class ProjectAdmin(ModelAdmin):
             f"{review} / 免审:{exempt_limit} / 单笔:{single_limit} / 单日:{daily_limit}"
         )
 
-    @display(description=_("项目级热钱包地址"))
+    @display(description=_("项目热钱包地址"))
     def display_hot_wallet_addresses(self, instance: Project):
         rows = []
         for chain_type, chain_label in ChainType.choices:
             if chain_type != ChainType.EVM:
                 continue
             chain_names = [
-                chain.name
-                for chain in Chain.objects.filter(type=chain_type)
+                chain.name for chain in Chain.objects.filter(type=chain_type)
             ]
             try:
                 hot_wallet_address = instance.wallet.get_address(
@@ -749,7 +748,7 @@ class ProjectAdmin(ModelAdmin):
             "</div>",
             _("地址格式"),
             _("适用链"),
-            _("项目级热钱包地址"),
+            _("项目热钱包地址"),
             body,
         )
 

@@ -177,7 +177,7 @@ class SystemWallet(models.Model):
     """全平台唯一系统级热钱包归属声明。
 
     Wallet 仍然只负责 signer 钱包引用和地址派生；SystemWallet 只表达
-    “系统级热钱包业务归属”，避免和项目级热钱包混淆。
+    “系统级热钱包业务归属”，避免和项目热钱包混淆。
     """
 
     singleton_key = models.PositiveSmallIntegerField(

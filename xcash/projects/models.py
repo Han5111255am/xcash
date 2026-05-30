@@ -31,7 +31,7 @@ class Project(models.Model):
     wallet = models.OneToOneField(
         "chains.Wallet",
         on_delete=models.CASCADE,
-        verbose_name=_("项目级热钱包"),
+        verbose_name=_("项目热钱包"),
         help_text=_("用于项目提币、归集等项目资产流转交易。"),
     )
     ip_white_list = models.TextField(
@@ -49,7 +49,7 @@ class Project(models.Model):
         _("通知地址"),
         blank=True,
         default="",
-        help_text=_("用于本网关发送通知到项目后端"),
+        help_text=_("用于本网关发送通知到商户后端"),
     )
     webhook_open = models.BooleanField(verbose_name=_("通知状态"), default=True)
     failed_count = models.PositiveIntegerField(
@@ -94,8 +94,7 @@ class Project(models.Model):
         _("免审核门槛(USD)"),
         max_digits=16,
         decimal_places=2,
-        null=True,
-        blank=True,
+        default=Decimal("0"),
         help_text=_(
             "仅在开启提币审核时生效；低于该金额的提币可直接进入链上发送队列，留空表示全部需要审核"
         ),
@@ -109,7 +108,7 @@ class Project(models.Model):
         help_text=_("留空表示不限额；超出时直接拒绝创建提币请求"),
     )
     withdrawal_daily_limit = models.DecimalField(
-        _("单日提币限额(USD)"),
+        _("日提币限额(USD)"),
         max_digits=16,
         decimal_places=2,
         null=True,
@@ -155,8 +154,7 @@ class Project(models.Model):
             errors.append(_("IP 白名单未配置"))  # noqa
         if not self.webhook:
             errors.append(_("通知地址未配置"))  # noqa
-        if not DifferRecipientAddress.objects.filter(project=self).exists():
-            errors.append(_("差额账单收款地址未配置"))  # noqa
+
         return (not errors), errors
 
     def recipients(self, chain: Chain):
@@ -189,17 +187,10 @@ class DifferRecipientAddress(models.Model):
         choices=ChainType,
         help_text="EVM: Ethereum, BSC, Polygon, Base...<br>Tron: Tron",
     )
-    address = AddressField(verbose_name=_("差额账单收款地址"))
+    address = AddressField(verbose_name=_("差额账单收款地址"), unique=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("创建时间"))
 
     class Meta:
-        # 统一采用具名 UniqueConstraint，便于数据库约束报错定位和后续约束扩展。
-        constraints = [
-            models.UniqueConstraint(
-                fields=("chain_type", "address"),
-                name="uniq_differ_recipient_address_chain_type_address",
-            ),
-        ]
         verbose_name = _("差额账单收款地址")
         verbose_name_plural = _("差额账单收款地址")
 
