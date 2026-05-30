@@ -1,8 +1,10 @@
+from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import Mock
 from unittest.mock import patch
 
 from django.core.cache import cache
+from django.utils import timezone
 from django.test import SimpleTestCase
 from django.test import TestCase
 from django.test import override_settings
@@ -817,15 +819,36 @@ class EvmErc20ScannerTests(TestCase):
         poll_chain_mock.assert_called_once()
 
     @patch("evm.tasks._scan_evm_chain.delay")
-    def test_scan_active_evm_chains_dispatches_combined_task(
+    def test_scan_active_evm_chains_dispatches_due_chain(
         self,
         delay_mock,
     ):
         self._create_scan_dispatch_ignored_chains()
+        # 把 last_scanned_at 推到远早于扫描周期，使本链到期；同时验证
+        # 非活跃链与非 EVM 链不会被本调度器放行。
+        self._mark_chain_due(self.chain)
 
         scan_active_evm_chains()
 
         delay_mock.assert_called_once_with(self.chain.pk)
+
+    @patch("evm.tasks._scan_evm_chain.delay")
+    def test_scan_active_evm_chains_skips_chain_not_yet_due(
+        self,
+        delay_mock,
+    ):
+        # 刚扫描过（last_scanned_at 接近当前时间）的链未到扫描周期，应被跳过。
+        Chain.objects.filter(pk=self.chain.pk).update(last_scanned_at=timezone.now())
+
+        scan_active_evm_chains()
+
+        delay_mock.assert_not_called()
+
+    @staticmethod
+    def _mark_chain_due(chain) -> None:
+        Chain.objects.filter(pk=chain.pk).update(
+            last_scanned_at=timezone.now() - timedelta(hours=1)
+        )
 
     def test_candidate_lookup_includes_vault_slots_and_excludes_system_addresses(self):
         # scanner 只观察本轮日志候选中的 VaultSlot 等入账地址，热钱包 Address 不承接外部入账。

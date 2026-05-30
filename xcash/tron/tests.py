@@ -1357,6 +1357,10 @@ class TronTaskTests(TestCase):
             rpc="",
             active=True,
         )
+        # 把 last_scanned_at 推到远早于扫描周期，使本链到期可被调度。
+        Chain.objects.filter(pk=tron_chain.pk).update(
+            last_scanned_at=timezone.now() - timedelta(hours=1)
+        )
 
         scan_active_tron_chains.run()
 

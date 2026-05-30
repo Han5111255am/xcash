@@ -3,7 +3,6 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
-from config.performance import get_int
 from config.performance import get_int_default
 
 # set the default Django settings module for the 'celery' program.
@@ -37,9 +36,11 @@ EVM_BROADCAST_SCHEDULE_SECONDS = get_int_default(
     "CELERY_EVM_BROADCAST_SCHEDULE_SECONDS",
     8,
 )
-EVM_SCAN_SCHEDULE_SECONDS = get_int(
-    "CELERY_EVM_SCAN_SCHEDULE_SECONDS",
-    "evm_scan_seconds",
+# 扫描调度器固定每 2 秒巡检一次活跃链；具体每条链多久扫一次由
+# ChainSpec.scan_interval_seconds 与 Chain.last_scanned_at 在任务内决定。
+SCAN_DISPATCH_SCHEDULE_SECONDS = get_int_default(
+    "CELERY_SCAN_DISPATCH_SCHEDULE_SECONDS",
+    2,
 )
 EVM_NON_TRANSFER_CONFIRM_SCHEDULE_SECONDS = get_int_default(
     "CELERY_EVM_NON_TRANSFER_CONFIRM_SCHEDULE_SECONDS",
@@ -48,10 +49,6 @@ EVM_NON_TRANSFER_CONFIRM_SCHEDULE_SECONDS = get_int_default(
 EVM_VAULT_SLOT_COLLECT_SCHEDULE_SECONDS = get_int_default(
     "CELERY_EVM_VAULT_SLOT_COLLECT_SCHEDULE_SECONDS",
     60,
-)
-TRON_SCAN_SCHEDULE_SECONDS = get_int(
-    "CELERY_TRON_SCAN_SCHEDULE_SECONDS",
-    "tron_scan_seconds",
 )
 INVOICE_EXPIRED_SCHEDULE_SECONDS = get_int_default(
     "CELERY_INVOICE_EXPIRED_SCHEDULE_SECONDS",
@@ -101,7 +98,7 @@ evm_tasks = {
     },
     "scan_active_evm_chains": {
         "task": "evm.tasks.scan_active_evm_chains",
-        "schedule": EVM_SCAN_SCHEDULE_SECONDS,
+        "schedule": SCAN_DISPATCH_SCHEDULE_SECONDS,
     },
     "confirm_non_transfer_tx_tasks": {
         "task": "evm.tasks.confirm_non_transfer_tx_tasks",
@@ -129,7 +126,7 @@ currencies_tasks = {
 tron_tasks = {
     "scan_active_tron_chains": {
         "task": "tron.tasks.scan_active_tron_chains",
-        "schedule": TRON_SCAN_SCHEDULE_SECONDS,
+        "schedule": SCAN_DISPATCH_SCHEDULE_SECONDS,
     },
 }
 

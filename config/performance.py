@@ -14,8 +14,6 @@ class PerformanceProfile:
     django_threads: int
     signer_workers: int
     celery_worker_concurrency: int
-    evm_scan_seconds: int
-    tron_scan_seconds: int
 
 
 PROFILES = {
@@ -24,24 +22,18 @@ PROFILES = {
         django_threads=2,
         signer_workers=1,
         celery_worker_concurrency=2,
-        evm_scan_seconds=12,
-        tron_scan_seconds=12,
     ),
     "medium": PerformanceProfile(
         django_workers=4,
         django_threads=4,
         signer_workers=2,
         celery_worker_concurrency=4,
-        evm_scan_seconds=10,
-        tron_scan_seconds=10,
     ),
     "high": PerformanceProfile(
         django_workers=8,
         django_threads=8,
         signer_workers=2,
         celery_worker_concurrency=8,
-        evm_scan_seconds=6,
-        tron_scan_seconds=6,
     ),
 }
 

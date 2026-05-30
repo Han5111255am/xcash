@@ -64,6 +64,10 @@ class Chain(models.Model):
     tron_api_key = models.CharField(_("Tron API Key"), blank=True, default="")
 
     created_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
+    # 该链上一次扫描任务完成的时间。调度器据此与 scan_interval_seconds 对比，
+    # 判断本链是否到期需要再次扫描。auto_now_add 让新建链以创建时刻为起点，
+    # 经过一个扫描周期后自然进入首扫；后续由 mark_scanned() 显式推进。
+    last_scanned_at = models.DateTimeField(_("最近扫描时间"), auto_now_add=True)
 
     class Meta:
         verbose_name = _("链")
@@ -102,6 +106,29 @@ class Chain(models.Model):
     @property
     def confirm_block_count(self) -> int:
         return self.spec.confirm_block_count
+
+    @property
+    def scan_interval_seconds(self) -> int:
+        """本链两次扫描之间的最小间隔（秒），由链常量决定。"""
+        return self.spec.scan_interval_seconds
+
+    @property
+    def is_due_for_scan(self) -> bool:
+        """距上次扫描完成是否已达本链扫描周期，到期则需再次调度扫描。"""
+        if self.last_scanned_at is None:
+            return True
+        elapsed = (timezone.now() - self.last_scanned_at).total_seconds()
+        return elapsed >= self.scan_interval_seconds
+
+    def mark_scanned(self) -> None:
+        """扫描任务完成后推进 last_scanned_at。
+
+        用 update 直接落库，绕过 save()/full_clean()，既避免逐行校验开销，
+        也能改写 auto_now_add（创建后默认不可写）字段。
+        """
+        now = timezone.now()
+        Chain.objects.filter(pk=self.pk).update(last_scanned_at=now)
+        self.last_scanned_at = now
 
     @cached_property
     def native_coin(self):

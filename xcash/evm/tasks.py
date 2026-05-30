@@ -183,19 +183,22 @@ def _scan_evm_chain(chain_pk: int) -> None:
     chain = Chain.objects.get(pk=chain_pk)
 
     try:
-        EvmScannerService.scan_chain(chain=chain)
-    except EvmScannerRpcError:
-        logger.warning("EVM 自扫描 RPC 失败", chain=chain.name)
+        try:
+            EvmScannerService.scan_chain(chain=chain)
+        except EvmScannerRpcError:
+            logger.warning("EVM 自扫描 RPC 失败", chain=chain.name)
 
-    EvmTaskPoller.poll_chain(chain=chain)
-    logger.info("EVM 自扫描完成", chain=chain.name)
+        EvmTaskPoller.poll_chain(chain=chain)
+        logger.info("EVM 自扫描完成", chain=chain.name)
+    finally:
+        # 无论本轮是否命中 RPC 异常都推进 last_scanned_at，按固定周期重试，
+        # 避免对不健康的节点每 2 秒一次连环重扫。
+        chain.mark_scanned()
 
 
 @shared_task(ignore_result=True)
 def scan_active_evm_chains() -> None:
-    """批量调度 EVM 链统一日志扫描任务。"""
-    for chain_pk in Chain.objects.filter(
-        active=True,
-        type=ChainType.EVM,
-    ).values_list("pk", flat=True):
-        _scan_evm_chain.delay(chain_pk)
+    """每 2 秒巡检活跃 EVM 链，仅调度到期（now - last_scanned_at ≥ 扫描周期）的链。"""
+    for chain in Chain.objects.filter(active=True, type=ChainType.EVM):
+        if chain.is_due_for_scan:
+            _scan_evm_chain.delay(chain.pk)

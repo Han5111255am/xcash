@@ -33,21 +33,26 @@ class ChainSpec:
     confirm_block_count: int
     native_coin_symbol: str
     native_coin_decimals: int
+    # 该链两次扫描之间的最小间隔（秒）。调度器固定每 2 秒巡检一次，
+    # 仅放行 now - last_scanned_at ≥ scan_interval_seconds 的链，
+    # 以此为不同出块速度的链设置各自的扫描节奏。取值通常贴近出块时间，
+    # 低于调度粒度（2 秒）也只会按每轮巡检触发，不会更快。
+    scan_interval_seconds: int
 
 
 CHAIN_SPECS: dict[str, ChainSpec] = {
-    ChainCode.Ethereum: ChainSpec(ChainType.EVM, 1, False, 12, "ETH", 18),
-    ChainCode.BSC: ChainSpec(ChainType.EVM, 56, True, 15, "BNB", 18),
-    ChainCode.Polygon: ChainSpec(ChainType.EVM, 137, True, 128, "POL", 18),
-    ChainCode.ArbitrumOne: ChainSpec(ChainType.EVM, 42161, False, 20, "ETH", 18),
-    ChainCode.Optimism: ChainSpec(ChainType.EVM, 10, False, 20, "ETH", 18),
-    ChainCode.Base: ChainSpec(ChainType.EVM, 8453, False, 20, "ETH", 18),
-    ChainCode.Avalanche: ChainSpec(ChainType.EVM, 43114, False, 2, "AVAX", 18),
-    ChainCode.ZkSyncEra: ChainSpec(ChainType.EVM, 324, False, 20, "ETH", 18),
-    ChainCode.Linea: ChainSpec(ChainType.EVM, 59144, False, 20, "ETH", 18),
-    ChainCode.Scroll: ChainSpec(ChainType.EVM, 534352, False, 20, "ETH", 18),
-    ChainCode.Anvil: ChainSpec(ChainType.EVM, 31337, False, 1, "ETH", 18),
-    ChainCode.Tron: ChainSpec(ChainType.TRON, None, None, 19, "TRX", 6),
+    ChainCode.Ethereum: ChainSpec(ChainType.EVM, 1, False, 12, "ETH", 18, 12),
+    ChainCode.BSC: ChainSpec(ChainType.EVM, 56, True, 15, "BNB", 18, 6),
+    ChainCode.Polygon: ChainSpec(ChainType.EVM, 137, True, 128, "POL", 18, 6),
+    ChainCode.ArbitrumOne: ChainSpec(ChainType.EVM, 42161, False, 20, "ETH", 18, 4),
+    ChainCode.Optimism: ChainSpec(ChainType.EVM, 10, False, 20, "ETH", 18, 4),
+    ChainCode.Base: ChainSpec(ChainType.EVM, 8453, False, 20, "ETH", 18, 4),
+    ChainCode.Avalanche: ChainSpec(ChainType.EVM, 43114, False, 8, "AVAX", 18, 6),
+    ChainCode.ZkSyncEra: ChainSpec(ChainType.EVM, 324, False, 20, "ETH", 18, 4),
+    ChainCode.Linea: ChainSpec(ChainType.EVM, 59144, False, 20, "ETH", 18, 6),
+    ChainCode.Scroll: ChainSpec(ChainType.EVM, 534352, False, 20, "ETH", 18, 6),
+    ChainCode.Anvil: ChainSpec(ChainType.EVM, 31337, False, 8, "ETH", 18, 4),
+    ChainCode.Tron: ChainSpec(ChainType.TRON, None, None, 16, "TRX", 6, 6),
 }
 
 
