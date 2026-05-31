@@ -3,7 +3,7 @@
 <p align="center">
   <strong>Open-Source Self-Hosted Cryptocurrency Payment Gateway</strong>
   <br />
-  Accept USDT, ETH, and 100+ blockchain assets with zero platform fees and full self-custody.
+  Accept USDT, ETH, and assets across major EVM chains and Tron with zero platform fees and full self-custody.
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@ Unlike hosted payment processors such as CoinGate or OpenNode, Xcash is **fully 
 
 | Feature | Detail |
 |---------|--------|
-| Payment gateway | Accept USDT, ETH, and other crypto assets on 100+ chains |
+| Payment gateway | Accept USDT, ETH, and other crypto assets on major EVM chains and Tron |
 | Self-custody | Private keys stay on your own infrastructure |
 | Zero platform fees | No percentage cuts, pay only blockchain gas |
 | Deposit and withdrawal | Exchange-style crypto deposit and withdrawal flows |
@@ -73,7 +73,7 @@ Xcash supports MistTrack OpenAPI V3 first and can fall back to the QuickNode Mis
 | vs. | Xcash | CoinGate | OpenNode |
 |---|---|---|---|
 | Self-hosted | Yes | No | No |
-| 100+ chains | Yes | Yes | No |
+| Major EVM chains and Tron | Yes | Yes | No |
 | Zero platform fees | Yes | No | No |
 | Deposit and withdrawal | Yes | No | No |
 | Risk control | Yes | No | No |
