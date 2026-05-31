@@ -1106,6 +1106,126 @@ class StressTaskTests(TestCase):
         self.assertIsNotNone(stress.finished_at)
 
 
+class VerifyDepositCollectionTests(TestCase):
+    """充币归集验证简化后行为回归。
+
+    充币模型简化后 Deposit 不再有 status 字段（确认状态取自 Transfer），归集
+    也变为 confirm_deposit 触发的 fire-and-forget 异步 TxTask。verify_deposit_collection
+    随之收敛为与 verify_invoice_collection 同形态的一次性收口：WEBHOOK_OK 的
+    deposit case 只要能按 tx_hash 找到 Deposit 记录即 SUCCEEDED，否则 FAILED。
+    """
+
+    def setUp(self):
+        from chains.models import Transfer
+        from chains.models import TransferStatus
+        from chains.models import TransferType
+        from deposits.models import Deposit
+        from projects.models import Customer
+
+        self.project = Project.objects.create(
+            name="Stress Deposit Verify Project",
+            wallet=Wallet.objects.create(),
+            webhook="http://localhost/stress/webhook",
+            ip_white_list="*",
+            active=True,
+        )
+        self.stress_run = StressRun.objects.create(
+            name="deposit-verify",
+            deposit_count=2,
+            deposit_customer_count=1,
+            status=StressRunStatus.RUNNING,
+            project=self.project,
+        )
+        self.chain = Chain.objects.create(code=ChainCode.Anvil, rpc="", active=True)
+        self.crypto = Crypto.objects.create(
+            name="Tether Verify",
+            symbol="USDTV",
+            coingecko_id="tether-verify",
+        )
+        self.customer = Customer.objects.create(project=self.project, uid="C0")
+
+        # 已确认到账的 Transfer + Deposit：模拟链上充值已被系统入账。
+        self.confirmed_hash = "0x" + "d" * 64
+        transfer = Transfer.objects.create(
+            chain=self.chain,
+            block=1,
+            block_hash="0x" + "aa" * 32,
+            hash=self.confirmed_hash,
+            crypto=self.crypto,
+            from_address="0x0000000000000000000000000000000000000002",
+            to_address="0x0000000000000000000000000000000000000011",
+            value="1",
+            amount=Decimal("1"),
+            timestamp=1,
+            datetime=timezone.now(),
+            status=TransferStatus.CONFIRMED,
+            type=TransferType.Deposit,
+        )
+        Deposit.objects.create(
+            customer=self.customer,
+            transfer=transfer,
+            worth=Decimal("1"),
+        )
+
+    def _make_case(self, *, sequence, tx_hash):
+        from stress.models import DepositStressCase
+
+        return DepositStressCase.objects.create(
+            stress_run=self.stress_run,
+            sequence=sequence,
+            scheduled_offset=0,
+            customer_uid=self.customer.uid,
+            crypto=self.crypto.symbol,
+            chain=self.chain.code,
+            amount=Decimal("1"),
+            # case.tx_hash 不带 0x 前缀，finalize 需自行补全两种形式匹配 Transfer.hash。
+            tx_hash=tx_hash,
+            status=DepositStressCaseStatus.WEBHOOK_OK,
+        )
+
+    def test_webhook_ok_case_with_matching_deposit_succeeds(self):
+        from stress.tasks import verify_deposit_collection
+
+        case = self._make_case(sequence=1, tx_hash="d" * 64)
+
+        verify_deposit_collection.apply(args=[self.stress_run.pk])
+
+        case.refresh_from_db()
+        self.assertEqual(case.status, DepositStressCaseStatus.SUCCEEDED)
+        self.assertTrue(case.collection_verified)
+        self.assertEqual(case.collection_hash, self.confirmed_hash)
+        self.assertIsNotNone(case.finished_at)
+
+        self.stress_run.refresh_from_db()
+        self.assertEqual(self.stress_run.succeeded, 1)
+
+    def test_webhook_ok_case_without_deposit_fails(self):
+        from stress.tasks import verify_deposit_collection
+
+        case = self._make_case(sequence=2, tx_hash="e" * 64)
+
+        verify_deposit_collection.apply(args=[self.stress_run.pk])
+
+        case.refresh_from_db()
+        self.assertEqual(case.status, DepositStressCaseStatus.FAILED)
+        self.assertFalse(case.collection_verified)
+        self.assertEqual(case.error, "未找到 Deposit 记录")
+        self.assertIsNotNone(case.finished_at)
+
+    def test_noop_when_no_webhook_ok_cases(self):
+        from stress.tasks import verify_deposit_collection
+
+        # 仅有一个尚未通过 webhook 的 case：不应被收口。
+        case = self._make_case(sequence=3, tx_hash="d" * 64)
+        case.status = DepositStressCaseStatus.PAID
+        case.save(update_fields=["status"])
+
+        verify_deposit_collection.apply(args=[self.stress_run.pk])
+
+        case.refresh_from_db()
+        self.assertEqual(case.status, DepositStressCaseStatus.PAID)
+
+
 class StressWebhookTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()

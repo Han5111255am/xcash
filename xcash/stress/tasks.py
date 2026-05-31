@@ -1,11 +1,9 @@
 # xcash/stress/tasks.py
-import time
 from datetime import timedelta
 
 import httpx
 import structlog
 from celery import shared_task
-from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
@@ -533,62 +531,21 @@ def _maybe_trigger_invoice_collection_verification(stress_run_id: int) -> None:
     )
 
 
-# 归集验证 self-rescheduling 配置
-# - _VERIFY_COLLECTION_INTERVAL: 每轮自调度的间隔（秒）
-# - _VERIFY_COLLECTION_OVERALL_TIMEOUT: 整体兜底超时（秒），保留原 30 分钟语义
-# - _VERIFY_COLLECTION_STALL_TIMEOUT: progress 持续无进展多久判停滞
-# - _VERIFY_COLLECTION_CACHE_TIMEOUT: cache state 存活时间，需 > overall timeout
-_VERIFY_COLLECTION_INTERVAL = 30
-_VERIFY_COLLECTION_OVERALL_TIMEOUT = 1800
-_VERIFY_COLLECTION_STALL_TIMEOUT = 120
-_VERIFY_COLLECTION_CACHE_TIMEOUT = 1900
-
-
-def _verify_collection_cache_key(stress_run_id: int) -> str:
-    return f"stress:verify_collection:{stress_run_id}"
-
-
 @shared_task(bind=True, ignore_result=True, soft_time_limit=120, time_limit=180)
 @singleton_task(timeout=180, use_params=True)
 def verify_deposit_collection(self, stress_run_id: int) -> None:
-    """Phase 2：VaultSlot 体系下轮询 Deposit 是否完成。
+    """VaultSlot 体系下，Deposit 确认（webhook OK）即代表充币入账完成，直接收口。
 
-    幂等保证：
-    - singleton_task(use_params=True) 用 stress_run_id 区分锁，同一 run 同时只有
-      一个 task 在跑（防 webhook handler 重复触发与 self-reschedule 之间的竞态）。
-    - 任意一轮的查询 + 重调度都不修改业务状态，只在判定阶段写 case。
+    新架构里「归集」（VaultSlot → 项目 vault）是 confirm_deposit 触发的
+    fire-and-forget 异步 TxTask，与商户视角的「充币是否成功」解耦，因此压测
+    不再轮询归集进度——旧版按 Deposit.status 轮询，而该字段已随充币模型简化移除
+    （Deposit 确认状态直接取自其 Transfer，不再维护独立状态机）。
 
-    判定阶段触发条件：
-    1) progress_key == (0, 0, 0) → 完成
-    2) progress_key 持续 _VERIFY_COLLECTION_STALL_TIMEOUT 秒不下降 → 停滞
-    3) start_ts 距今超过 overall timeout → 兜底超时
-
-    stall 用"时间窗口"而非"调用次数"：webhook handler 完成后会派 100 个
-    verify task(countdown=15)，singleton_task 锁释放后这些 task 会在几
-    秒内被连续 dequeue 跑。改造前 while True + sleep(30) 间隔由 sleep
-    保证；改造后必须用绝对时间窗口，否则 burst 调用 3 次就会误判停滞
-    (实测 stress run 32 触发：05:19-05:22 内 3 次连续跑 stall_rounds 0→1→2)。
-
-    bind=True 是为了配合 self-reschedule 的语义清晰（虽然这里没用 self.retry，
-    self.retry 是错误重试机制，max_retries=3 不够 30+ 轮等待，且语义不对）。
+    本 task 与 verify_invoice_collection 同形态：取出已通过 webhook 验证的
+    deposit case，逐个确认 Deposit 记录存在后标 SUCCEEDED。singleton_task 用
+    stress_run_id 区分锁，保证 webhook handler 重复触发与安全网调度之间幂等；
+    已无 WEBHOOK_OK case 时直接 return。
     """
-    from deposits.models import Deposit
-
-    # ── 1. 前置条件检查（不更新 state，不重调度）────────────────
-    # 还有 case 尚未通过 webhook 阶段：直接 return。后续 webhook handler
-    # 完成后会通过 _maybe_trigger_collection_verification 重新触发首轮。
-    pre_webhook_states = {
-        DepositStressCaseStatus.PENDING,
-        DepositStressCaseStatus.CREATING,
-        DepositStressCaseStatus.PAYING,
-        DepositStressCaseStatus.PAID,
-    }
-    if DepositStressCase.objects.filter(
-        stress_run_id=stress_run_id,
-        status__in=pre_webhook_states,
-    ).exists():
-        return
-
     try:
         stress = StressRun.objects.select_related("project").get(pk=stress_run_id)
     except StressRun.DoesNotExist:
@@ -601,113 +558,9 @@ def verify_deposit_collection(self, stress_run_id: int) -> None:
         )
     )
     if not webhook_ok_cases:
-        logger.info(
-            "stress.deposit_collection.no_webhook_ok_cases",
-            stress_run_id=stress_run_id,
-        )
         return
 
-    # ── 2. 读取 / 初始化 state ────────────────────────────────
-    cache_key = _verify_collection_cache_key(stress_run_id)
-    state = cache.get(cache_key)
-    now_ts = time.time()
-    if state is None:
-        prev_progress_key: tuple[int, int, int] | None = None
-        stall_since_ts = now_ts
-        start_ts = now_ts
-    else:
-        # cache 后端可能把 tuple 序列化成 list（JSON 化场景），统一转回 tuple。
-        raw_prev = state.get("prev_progress")
-        if raw_prev is None:
-            prev_progress_key = None
-        else:
-            prev_progress_key = tuple(raw_prev)
-        # stall_since_ts: progress_key 第一次进入当前值的时间戳。
-        # progress 推进时重置为当前 now，未推进时保持不动。
-        stall_since_ts = state.get("stall_since_ts", now_ts)
-        start_ts = state.get("start_ts", now_ts)
-
-    # ── 3. 整体兜底超时：直接进入判定阶段 ──────────────────────
-    if now_ts - start_ts > _VERIFY_COLLECTION_OVERALL_TIMEOUT:
-        logger.warning(
-            "stress.deposit_collection.overall_timeout",
-            stress_run_id=stress_run_id,
-            elapsed=int(now_ts - start_ts),
-        )
-        _finalize_collection_verification(
-            stress, webhook_ok_cases, reason="overall_timeout"
-        )
-        cache.delete(cache_key)
-        return
-
-    # ── 4. 单轮轮询：归集触发 + 进度采集 ───────────────────────
-    # Transfer.hash 带 0x 前缀，case.tx_hash 可能不带，构建两种形式用于匹配
-    tx_hashes: list[str] = []
-    for c in webhook_ok_cases:
-        h = c.tx_hash
-        tx_hashes.append(h)
-        if not h.startswith("0x"):
-            tx_hashes.append(f"0x{h}")
-        else:
-            tx_hashes.append(h.removeprefix("0x"))
-    expected_case_hashes = {c.tx_hash.removeprefix("0x") for c in webhook_ok_cases}
-
-    deposits = list(
-        Deposit.objects.filter(
-            transfer__hash__in=tx_hashes,
-            customer__project=stress.project,
-            status="completed",
-        )
-        .select_related("transfer")
-        .order_by("pk")
-    )
-    matched_hashes = {deposit.transfer.hash.removeprefix("0x") for deposit in deposits}
-    missing_deposit_count = len(expected_case_hashes - matched_hashes)
-    progress_key = (missing_deposit_count, 0, 0)
-
-    # ── 5. 判定逻辑 ────────────────────────────────────────────
-    if progress_key == (0, 0, 0):
-        logger.info(
-            "stress.deposit_collection.all_collected",
-            stress_run_id=stress_run_id,
-        )
-        _finalize_collection_verification(
-            stress, webhook_ok_cases, reason="completed"
-        )
-        cache.delete(cache_key)
-        return
-
-    # 第 1 轮 prev=None 视为"刚开始观察"，stall_since_ts 已在 state 初始化为 now。
-    # progress 字典序严格变小才算推进（任一阶段计数下降都会让字典序变小）。
-    # 推进时重置 stall_since_ts；未推进时若距上次推进已超 STALL_TIMEOUT，判定停滞。
-    if prev_progress_key is None or progress_key < prev_progress_key:
-        stall_since_ts = now_ts
-    elif now_ts - stall_since_ts > _VERIFY_COLLECTION_STALL_TIMEOUT:
-        logger.warning(
-            "stress.deposit_collection.stalled",
-            stress_run_id=stress_run_id,
-            missing_deposit_count=missing_deposit_count,
-            no_collection_count=0,
-            pending_confirm_count=0,
-            stall_seconds=int(now_ts - stall_since_ts),
-        )
-        _finalize_collection_verification(
-            stress, webhook_ok_cases, reason="stalled"
-        )
-        cache.delete(cache_key)
-        return
-
-    # ── 6. 未达终止条件：写 state，30 秒后自调度 ───────────────
-    new_state = {
-        # 用 list 而不是 tuple，兼容 JSON 序列化的 cache 后端。
-        "prev_progress": list(progress_key),
-        "stall_since_ts": stall_since_ts,
-        "start_ts": start_ts,
-    }
-    cache.set(cache_key, new_state, timeout=_VERIFY_COLLECTION_CACHE_TIMEOUT)
-    verify_deposit_collection.apply_async(
-        args=[stress_run_id], countdown=_VERIFY_COLLECTION_INTERVAL
-    )
+    _finalize_collection_verification(stress, webhook_ok_cases, reason="completed")
 
 
 def _finalize_collection_verification(
@@ -761,16 +614,7 @@ def _finalize_collection_verification(
         StressService.on_case_finished(case)
 
 
-# ── 合约账单归集验证（run-level，镜像 verify_deposit_collection）──
-
-_VERIFY_INVOICE_COLLECTION_INTERVAL = _VERIFY_COLLECTION_INTERVAL
-_VERIFY_INVOICE_COLLECTION_OVERALL_TIMEOUT = _VERIFY_COLLECTION_OVERALL_TIMEOUT
-_VERIFY_INVOICE_COLLECTION_STALL_TIMEOUT = _VERIFY_COLLECTION_STALL_TIMEOUT
-_VERIFY_INVOICE_COLLECTION_CACHE_TIMEOUT = _VERIFY_COLLECTION_CACHE_TIMEOUT
-
-
-def _verify_invoice_collection_cache_key(stress_run_id: int) -> str:
-    return f"stress:verify_invoice_collection:{stress_run_id}"
+# ── 合约账单归集验证（run-level，与 verify_deposit_collection 同形态）──
 
 
 @shared_task(bind=True, ignore_result=True, soft_time_limit=120, time_limit=180)
