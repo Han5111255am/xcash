@@ -72,7 +72,7 @@ class VaultSlot(models.Model):
         null=True,
         blank=True,
     )
-    address = AddressField(_("VaultSlot 地址"))
+    address = AddressField(_("收款地址"))
     salt = models.BinaryField(_("CREATE2 Salt"), max_length=32)
     deploy_tx_task = models.OneToOneField(
         "evm.EvmTxTask",
@@ -114,7 +114,7 @@ class VaultSlot(models.Model):
                 name="ck_evm_vault_slot_usage_customer",
             ),
         ]
-        verbose_name = _("VaultSlot")
+        verbose_name = _("收款地址")
         verbose_name_plural = verbose_name
 
     def __str__(self):
@@ -511,7 +511,7 @@ class VaultSlotCollectSchedule(models.Model):
         VaultSlot,
         on_delete=models.CASCADE,
         related_name="collect_schedules",
-        verbose_name=_("VaultSlot"),
+        verbose_name=_("收款地址"),
     )
     chain = models.ForeignKey(Chain, on_delete=models.CASCADE, verbose_name=_("链"))
     crypto = models.ForeignKey(
@@ -540,7 +540,7 @@ class VaultSlotCollectSchedule(models.Model):
             ),
         ]
         ordering = ("due_at", "pk")
-        verbose_name = _("VaultSlot 归集计划")
+        verbose_name = _("收款地址归集计划")
         verbose_name_plural = verbose_name
 
     def __str__(self) -> str:
