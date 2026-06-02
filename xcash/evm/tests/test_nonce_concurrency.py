@@ -176,8 +176,8 @@ class EvmNonceConcurrencyTests(TransactionTestCase):
         在高并发下与 AddressChainState 行锁协同工作，不会出现跳跃或重复。
         """
         task_count = 1000
-        # 分批启动线程，每批 50 个，避免一次性开启过多连接
-        batch_size = 50
+        # 保持真实竞争窗口，但不要让测试一次性占满本地 Postgres 连接上限。
+        batch_size = 10
         results: list[int] = []
         errors: list[Exception] = []
         lock = threading.Lock()
