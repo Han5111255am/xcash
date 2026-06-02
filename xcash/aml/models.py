@@ -5,59 +5,45 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 
-class RiskSource(models.TextChoices):
+class AmlProvider(models.TextChoices):
     QUICKNODE_MISTTRACK = "quicknode_misttrack", _("QuickNode MistTrack")
     MISTTRACK_OPENAPI = "misttrack_openapi", _("MistTrack OpenAPI")
 
 
-class RiskLevel(models.TextChoices):
+class AmlRiskLevel(models.TextChoices):
     LOW = "Low", _("Low")
     MODERATE = "Moderate", _("Moderate")
     HIGH = "High", _("High")
     SEVERE = "Severe", _("Severe")
 
 
-class RiskAssessmentStatus(models.TextChoices):
-    PENDING = "pending", _("待查询")
+class AmlAssessmentStatus(models.TextChoices):
     SUCCESS = "success", _("查询成功")
     FAILED = "failed", _("查询失败")
-    SKIPPED = "skipped", _("已跳过")
 
 
-class RiskTargetType(models.TextChoices):
+class AmlTargetType(models.TextChoices):
     INVOICE = "invoice", _("账单")
     DEPOSIT = "deposit", _("充币")
 
 
-class RiskSkipReason(models.TextChoices):
-    """
-    仅记录"风控被触发但客观上无法完成"的跳过原因。
-    主动跳过的场景（阈值以下 / 总开关关闭 / SaaS tier 未授权）直接 return，
-    不创建 RiskAssessment，避免大量噪音记录。
-    """
-
-    UNSUPPORTED_CHAIN = "unsupported_chain", _("链或币种暂不支持")
-    PROVIDER_NOT_CONFIGURED = "provider_not_configured", _("未配置 provider")
-
-
-class RiskAssessment(models.Model):
+class AmlAssessment(models.Model):
     source = models.CharField(
         _("数据来源"),
-        choices=RiskSource,
+        choices=AmlProvider,
         max_length=32,
-        default=RiskSource.QUICKNODE_MISTTRACK,
+        default=AmlProvider.QUICKNODE_MISTTRACK,
         db_index=True,
     )
     status = models.CharField(
         _("查询状态"),
-        choices=RiskAssessmentStatus,
+        choices=AmlAssessmentStatus,
         max_length=16,
-        default=RiskAssessmentStatus.PENDING,
         db_index=True,
     )
     target_type = models.CharField(
         _("目标类型"),
-        choices=RiskTargetType,
+        choices=AmlTargetType,
         max_length=16,
         db_index=True,
     )
@@ -66,7 +52,7 @@ class RiskAssessment(models.Model):
         on_delete=models.CASCADE,
         null=True,
         blank=True,
-        related_name="risk_assessment",
+        related_name="aml_assessment",
         verbose_name=_("账单"),
     )
     deposit = models.OneToOneField(
@@ -74,14 +60,14 @@ class RiskAssessment(models.Model):
         on_delete=models.CASCADE,
         null=True,
         blank=True,
-        related_name="risk_assessment",
+        related_name="aml_assessment",
         verbose_name=_("充币"),
     )
     address = models.CharField(_("查询地址"), max_length=128, db_index=True)
     tx_hash = models.CharField(_("交易哈希"), max_length=128, blank=True, default="")
     risk_level = models.CharField(  # noqa: DJ001
         _("风险等级"),
-        choices=RiskLevel,
+        choices=AmlRiskLevel,
         max_length=16,
         null=True,
         blank=True,
@@ -98,14 +84,6 @@ class RiskAssessment(models.Model):
     risk_detail = models.JSONField(_("风险详情"), default=list, blank=True)
     risk_report_url = models.URLField(_("风险报告链接"), blank=True, default="")
     raw_response = models.JSONField(_("原始响应摘要"), default=dict, blank=True)
-    skip_reason = models.CharField(
-        _("跳过原因"),
-        choices=RiskSkipReason,
-        max_length=32,
-        blank=True,
-        default="",
-        db_index=True,
-    )
     error_message = models.TextField(_("错误摘要"), blank=True, default="")
     checked_at = models.DateTimeField(_("查询完成时间"), null=True, blank=True)
     created_at = models.DateTimeField(_("创建时间"), auto_now_add=True)
@@ -113,11 +91,11 @@ class RiskAssessment(models.Model):
 
     class Meta:
         ordering = ("-created_at",)
-        verbose_name = _("风险评估")
-        verbose_name_plural = _("风险评估")
+        verbose_name = _("AML 评估")
+        verbose_name_plural = _("AML 评估")
         constraints = [
             models.CheckConstraint(
-                name="risk_assessment_exactly_one_target",
+                name="aml_assessment_exactly_one_target",
                 condition=(
                     (
                         models.Q(invoice__isnull=False)
@@ -130,15 +108,15 @@ class RiskAssessment(models.Model):
                 ),
             ),
             models.CheckConstraint(
-                name="risk_assessment_target_type_matches_target",
+                name="aml_assessment_target_type_matches_target",
                 condition=(
                     (
-                        models.Q(target_type=RiskTargetType.INVOICE)
+                        models.Q(target_type=AmlTargetType.INVOICE)
                         & models.Q(invoice__isnull=False)
                         & models.Q(deposit__isnull=True)
                     )
                     | (
-                        models.Q(target_type=RiskTargetType.DEPOSIT)
+                        models.Q(target_type=AmlTargetType.DEPOSIT)
                         & models.Q(invoice__isnull=True)
                         & models.Q(deposit__isnull=False)
                     )
@@ -154,4 +132,4 @@ class RiskAssessment(models.Model):
         has_invoice = self.invoice_id is not None
         has_deposit = self.deposit_id is not None
         if has_invoice == has_deposit:
-            raise ValidationError(_("风险评估必须且只能关联一个业务目标。"))
+            raise ValidationError(_("AML 评估必须且只能关联一个业务目标。"))

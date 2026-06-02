@@ -1,6 +1,6 @@
+from aml.models import AmlRiskLevel
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from risk.models import RiskLevel
 
 from common.fields import SysNoField
 
@@ -25,7 +25,7 @@ class Deposit(models.Model):
     )
     risk_level = models.CharField(  # noqa: DJ001
         _("风险等级"),
-        choices=RiskLevel,
+        choices=AmlRiskLevel,
         max_length=16,
         null=True,
         blank=True,

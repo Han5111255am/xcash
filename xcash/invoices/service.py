@@ -4,10 +4,10 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import structlog
+from aml.tasks import screen_invoice_aml
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.utils import timezone
-from risk.tasks import mark_invoice_risk
 
 from chains.models import ConfirmMode
 from chains.models import TransferType
@@ -283,7 +283,7 @@ class InvoiceService:
         )
         invoice.refresh_from_db()
 
-        transaction.on_commit(lambda: mark_invoice_risk.delay(invoice.pk))
+        transaction.on_commit(lambda: screen_invoice_aml.delay(invoice.pk))
 
         # EPAY_V1 为托管模式，交易即时确认，不存在链上等待区块确认的阶段，
         # 预通知对其无意义；其完成通知由 EpaySubmitService 独立处理。

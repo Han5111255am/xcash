@@ -183,7 +183,7 @@ LOCAL_APPS = [
     "invoices",
     "deposits",
     "webhooks",
-    "risk",
+    "aml",
     # EVM 链相关模型（EvmOnchainTask）
     "evm",
     # Tron 监听、扫描游标与 provider 接入

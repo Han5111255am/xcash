@@ -8,11 +8,11 @@ from decimal import Decimal
 from typing import Any
 
 import httpx
-from risk.models import RiskLevel
+from aml.models import AmlRiskLevel
 
 
 @dataclass(frozen=True)
-class MistTrackRiskResult:
+class MistTrackAmlResult:
     risk_level: str
     risk_score: Decimal | None
     detail_list: list[Any]
@@ -109,7 +109,7 @@ class QuicknodeMistTrackClient:
     def __init__(self, *, endpoint_url: str):
         self.endpoint_url = endpoint_url
 
-    def address_risk_score(self, *, chain: str, address: str) -> MistTrackRiskResult:
+    def address_risk_score(self, *, chain: str, address: str) -> MistTrackAmlResult:
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -141,11 +141,11 @@ class QuicknodeMistTrackClient:
             raise TypeError("QuickNode MistTrack response missing result")
 
         risk_level = result.get("risk_level")
-        if risk_level not in RiskLevel.values:
+        if risk_level not in AmlRiskLevel.values:
             raise RuntimeError(f"unknown MistTrack risk level: {risk_level}")
 
         score = result.get("score")
-        return MistTrackRiskResult(
+        return MistTrackAmlResult(
             risk_level=str(risk_level),
             risk_score=Decimal(str(score)) if score is not None else None,
             detail_list=(
@@ -166,7 +166,7 @@ class MistTrackOpenApiClient:
     def __init__(self, *, api_key: str):
         self.api_key = api_key
 
-    def address_risk_score(self, *, coin: str, address: str) -> MistTrackRiskResult:
+    def address_risk_score(self, *, coin: str, address: str) -> MistTrackAmlResult:
         response = _request_with_retry(
             "GET",
             self.endpoint_url,
@@ -190,12 +190,12 @@ class MistTrackOpenApiClient:
             raise TypeError("MistTrack OpenAPI response missing data")
 
         risk_level = result.get("risk_level")
-        if risk_level not in RiskLevel.values:
+        if risk_level not in AmlRiskLevel.values:
             raise RuntimeError(f"unknown MistTrack risk level: {risk_level}")
 
         score = result.get("score")
         label = result.get("address_label")
-        return MistTrackRiskResult(
+        return MistTrackAmlResult(
             risk_level=str(risk_level),
             risk_score=Decimal(str(score)) if score is not None else None,
             detail_list=(

@@ -7,20 +7,19 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
+from aml.clients import MistTrackAmlResult
+from aml.clients import MistTrackOpenApiClient
+from aml.clients import QuicknodeMistTrackClient
+from aml.models import AmlAssessment
+from aml.models import AmlAssessmentStatus
+from aml.models import AmlProvider
+from aml.models import AmlRiskLevel
+from aml.service import AmlScreeningService
 from django.core.cache import cache
 from django.test import SimpleTestCase
 from django.test import TestCase
 from django.test import override_settings
 from django.utils import timezone
-from risk.clients import MistTrackOpenApiClient
-from risk.clients import MistTrackRiskResult
-from risk.clients import QuicknodeMistTrackClient
-from risk.models import RiskAssessment
-from risk.models import RiskAssessmentStatus
-from risk.models import RiskLevel
-from risk.models import RiskSkipReason
-from risk.models import RiskSource
-from risk.service import RiskMarkingService
 
 from chains.constants import ChainCode
 from chains.models import Chain
@@ -39,7 +38,7 @@ from projects.models import Customer
 from projects.models import Project
 
 
-class RiskTestMixin:
+class AmlTestMixin:
     def setUp(self):
         cache.clear()
         Fiat.objects.get_or_create(code="USD")
@@ -47,7 +46,7 @@ class RiskTestMixin:
             name="Ethereum",
             symbol="ETH",
             prices={"USD": "2000"},
-            coingecko_id="risk-eth",
+            coingecko_id="aml-eth",
         )
         self.chain = Chain.objects.create(
             code=ChainCode.Ethereum,
@@ -55,7 +54,7 @@ class RiskTestMixin:
             active=True,
         )
         self.wallet = Wallet.objects.create()
-        self.project = Project.objects.create(name="Risk Project", wallet=self.wallet)
+        self.project = Project.objects.create(name="AML Project", wallet=self.wallet)
         self.customer = Customer.objects.create(project=self.project, uid="u-1")
         self.transfer = Transfer.objects.create(
             chain=self.chain,
@@ -72,10 +71,10 @@ class RiskTestMixin:
             datetime=timezone.now(),
         )
         self.system_settings = SystemSettings.objects.create(
-            risk_marking_enabled=True,
-            risk_marking_threshold_usd=Decimal("100"),
-            risk_marking_cache_seconds=300,
-            risk_marking_force_refresh_threshold_usd=Decimal("10000"),
+            aml_screening_enabled=True,
+            aml_screening_threshold_usd=Decimal("100"),
+            aml_screening_cache_seconds=300,
+            aml_screening_force_refresh_threshold_usd=Decimal("10000"),
             quicknode_misttrack_endpoint_url="https://quicknode.example",
         )
 
@@ -108,8 +107,8 @@ class RiskTestMixin:
 
 
 class QuicknodeMistTrackClientTests(SimpleTestCase):
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_address_risk_score_posts_json_rpc_payload(self, httpx_request, _sleep):
         response = httpx.Response(
             200,
@@ -143,7 +142,7 @@ class QuicknodeMistTrackClientTests(SimpleTestCase):
             },
             timeout=5.0,
         )
-        self.assertEqual(result.risk_level, RiskLevel.HIGH)
+        self.assertEqual(result.risk_level, AmlRiskLevel.HIGH)
         self.assertEqual(result.risk_score, Decimal("88"))
         self.assertEqual(result.detail_list, ["Sanctioned entity"])
         # QuickNode 历史 dict → list[dict] 适配后单元素 list
@@ -152,8 +151,8 @@ class QuicknodeMistTrackClientTests(SimpleTestCase):
         # QuickNode add-on 不返回 address_label
         self.assertIsNone(result.address_label)
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_json_rpc_error_raises_client_error(self, httpx_request, _sleep):
         httpx_request.return_value = httpx.Response(
             200,
@@ -168,8 +167,8 @@ class QuicknodeMistTrackClientTests(SimpleTestCase):
 
 
 class MistTrackOpenApiClientTests(SimpleTestCase):
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_address_risk_score_calls_v3_endpoint_with_api_key(
         self, httpx_request, _sleep
     ):
@@ -209,7 +208,7 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
             params={"coin": "ETH", "address": "0xabc", "api_key": "secret"},
             timeout=5.0,
         )
-        self.assertEqual(result.risk_level, RiskLevel.HIGH)
+        self.assertEqual(result.risk_level, AmlRiskLevel.HIGH)
         self.assertEqual(result.risk_score, Decimal("75"))
         self.assertEqual(result.detail_list, ["Interact With High-risk Tag Address"])
         self.assertEqual(result.risk_detail[0]["hop_dic"], {"1": ["huionepay"]})
@@ -217,8 +216,8 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
         self.assertEqual(result.raw_response["address_label"], "Binance")
         self.assertEqual(result.risk_report_url, "https://report.example/v3")
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_api_error_raises_client_error(self, httpx_request, _sleep):
         httpx_request.return_value = httpx.Response(
             200,
@@ -233,8 +232,8 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
                 coin="ETH", address="0xabc"
             )
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_4xx_response_does_not_leak_api_key(self, httpx_request, _sleep):
         """HTTP 4xx 抛出的异常消息不得包含明文 api_key（防日志泄露）。"""
         httpx_request.return_value = httpx.Response(
@@ -255,8 +254,8 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
         # 4xx 不重试
         self.assertEqual(httpx_request.call_count, 1)
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_5xx_retries_then_succeeds(self, httpx_request, _sleep):
         ok = httpx.Response(
             200,
@@ -288,11 +287,11 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
             coin="ETH", address="0xabc"
         )
 
-        self.assertEqual(result.risk_level, RiskLevel.LOW)
+        self.assertEqual(result.risk_level, AmlRiskLevel.LOW)
         self.assertEqual(httpx_request.call_count, 3)
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_429_with_retry_after_retries_then_succeeds(self, httpx_request, _sleep):
         """429 响应体携带 retry_after 时应按该值休眠后重试。"""
         ok = httpx.Response(
@@ -325,11 +324,11 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
             coin="ETH", address="0xabc"
         )
 
-        self.assertEqual(result.risk_level, RiskLevel.LOW)
+        self.assertEqual(result.risk_level, AmlRiskLevel.LOW)
         self.assertEqual(httpx_request.call_count, 2)
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_429_exhausted_retries_raises_error(self, httpx_request, _sleep):
         """429 连续重试耗尽后应抛出异常。"""
         rate_limited = httpx.Response(
@@ -348,8 +347,8 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
 
         self.assertEqual(httpx_request.call_count, 3)
 
-    @patch("risk.clients.time.sleep", return_value=None)
-    @patch("risk.clients.httpx.request")
+    @patch("aml.clients.time.sleep", return_value=None)
+    @patch("aml.clients.httpx.request")
     def test_network_error_message_does_not_leak_api_key(
         self, httpx_request, _sleep
     ):
@@ -367,7 +366,7 @@ class MistTrackOpenApiClientTests(SimpleTestCase):
         self.assertEqual(httpx_request.call_count, 3)
 
 
-class RiskChainMappingTests(SimpleTestCase):
+class AmlChainMappingTests(SimpleTestCase):
     def test_quicknode_maps_only_addon_supported_networks(self):
         cases = {
             ChainType.TRON: "TRX",
@@ -383,7 +382,7 @@ class RiskChainMappingTests(SimpleTestCase):
                 else:
                     chain = SimpleNamespace(type=chain_key, chain="mock")
                 self.assertEqual(
-                    RiskMarkingService._quicknode_misttrack_chain(chain), expected
+                    AmlScreeningService._quicknode_misttrack_chain(chain), expected
                 )
 
     def test_common_evm_mainnets_map_to_misttrack_openapi_coin_codes(self):
@@ -419,7 +418,7 @@ class RiskChainMappingTests(SimpleTestCase):
                 chain = SimpleNamespace(type=ChainType.EVM, chain_id=chain_id, chain="mock")
                 crypto = Crypto(symbol=symbol)
                 self.assertEqual(
-                    RiskMarkingService._misttrack_openapi_coin(
+                    AmlScreeningService._misttrack_openapi_coin(
                         chain=chain, crypto=crypto
                     ),
                     expected,
@@ -430,55 +429,55 @@ class RiskChainMappingTests(SimpleTestCase):
         crypto = Crypto(symbol="USDT")
 
         self.assertEqual(
-            RiskMarkingService._misttrack_openapi_coin(chain=chain, crypto=crypto),
+            AmlScreeningService._misttrack_openapi_coin(chain=chain, crypto=crypto),
             "USDT-TRC20",
         )
 
 
 @override_settings(IS_SAAS=False)
-class RiskMarkingServiceTests(RiskTestMixin, TestCase):
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+class AmlScreeningServiceTests(AmlTestMixin, TestCase):
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_invoice_below_threshold_does_not_create_assessment(self, score):
         invoice = self.make_invoice(worth=Decimal("99.99"))
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(invoice=invoice).exists())
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
         invoice.refresh_from_db()
         self.assertIsNone(invoice.risk_level)
         self.assertIsNone(invoice.risk_score)
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_deposit_below_threshold_does_not_create_assessment(self, score):
         deposit = self.make_deposit(worth=Decimal("99.99"))
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(deposit=deposit).exists())
+        self.assertFalse(AmlAssessment.objects.filter(deposit=deposit).exists())
         deposit.refresh_from_db()
         self.assertIsNone(deposit.risk_level)
         self.assertIsNone(deposit.risk_score)
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    def test_marking_disabled_does_not_create_assessment(self, score):
-        self.system_settings.risk_marking_enabled = False
-        self.system_settings.save(update_fields=["risk_marking_enabled"])
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    def test_screening_disabled_does_not_create_assessment(self, score):
+        self.system_settings.aml_screening_enabled = False
+        self.system_settings.save(update_fields=["aml_screening_enabled"])
         invoice = self.make_invoice(worth=Decimal("500"))
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(invoice=invoice).exists())
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
 
     # ===== SaaS gate（spec §5） =====
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    def test_invoice_self_hosted_mode_marks_normally(self, score):
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    def test_invoice_self_hosted_mode_screens_normally(self, score):
         """自托管模式（class-level IS_SAAS=False），gate 直接放行。"""
         invoice = self.make_invoice(worth=Decimal("500"))
-        score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.SEVERE,
+        score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.SEVERE,
             risk_score=Decimal("95"),
             detail_list=[],
             risk_detail=[],
@@ -486,24 +485,24 @@ class RiskMarkingServiceTests(RiskTestMixin, TestCase):
             raw_response={},
         )
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_called_once()
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
+        assessment = AmlAssessment.objects.get(invoice=invoice)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
 
     @override_settings(IS_SAAS=True, INTERNAL_API_TOKEN="t")
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    def test_invoice_saas_permission_granted_marks(self, score):
-        """SaaS 模式 + 缓存命中 + enable_risk_marking=True → 正常标记。"""
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    def test_invoice_saas_permission_granted_screens(self, score):
+        """SaaS 模式 + 缓存命中 + enable_aml_screening=True → 正常筛查。"""
         invoice = self.make_invoice(worth=Decimal("500"))
         cache.set(
             f"saas:permission:{invoice.project.appid}",
-            {"enable_risk_marking": True, "_fetched_at": time.time()},
+            {"enable_aml_screening": True, "_fetched_at": time.time()},
             None,
         )
-        score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.SEVERE,
+        score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.SEVERE,
             risk_score=Decimal("95"),
             detail_list=[],
             risk_detail=[],
@@ -511,48 +510,48 @@ class RiskMarkingServiceTests(RiskTestMixin, TestCase):
             raw_response={},
         )
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_called_once()
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
+        assessment = AmlAssessment.objects.get(invoice=invoice)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
 
     @override_settings(IS_SAAS=True, INTERNAL_API_TOKEN="t")
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_invoice_saas_permission_denied_does_not_create_assessment(self, score):
-        """SaaS 模式 + 缓存命中 + enable_risk_marking=False → 直接 return，不写记录。"""
+        """SaaS 模式 + 缓存命中 + enable_aml_screening=False → 直接 return，不写记录。"""
         invoice = self.make_invoice(worth=Decimal("500"))
         cache.set(
             f"saas:permission:{invoice.project.appid}",
-            {"enable_risk_marking": False, "_fetched_at": time.time()},
+            {"enable_aml_screening": False, "_fetched_at": time.time()},
             None,
         )
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(invoice=invoice).exists())
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
         invoice.refresh_from_db()
         self.assertIsNone(invoice.risk_level)
 
     @override_settings(IS_SAAS=True, INTERNAL_API_TOKEN="t")
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_invoice_saas_cold_cache_fails_closed(self, score):
         """SaaS 模式 + 冷缓存 → fail-closed → 直接 return，不调 MistTrack 也不写记录。"""
         invoice = self.make_invoice(worth=Decimal("500"))
         # 不预写缓存，cache.clear() 已在 setUp 跑过
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(invoice=invoice).exists())
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    def test_deposit_self_hosted_mode_marks_normally(self, score):
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    def test_deposit_self_hosted_mode_screens_normally(self, score):
         """自托管模式（class-level IS_SAAS=False），gate 直接放行。"""
         deposit = self.make_deposit(worth=Decimal("500"))
-        score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.SEVERE,
+        score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.SEVERE,
             risk_score=Decimal("95"),
             detail_list=[],
             risk_detail=[],
@@ -560,23 +559,23 @@ class RiskMarkingServiceTests(RiskTestMixin, TestCase):
             raw_response={},
         )
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_called_once()
-        assessment = RiskAssessment.objects.get(deposit=deposit)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
+        assessment = AmlAssessment.objects.get(deposit=deposit)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
 
     @override_settings(IS_SAAS=True, INTERNAL_API_TOKEN="t")
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    def test_deposit_saas_permission_granted_marks(self, score):
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    def test_deposit_saas_permission_granted_screens(self, score):
         deposit = self.make_deposit(worth=Decimal("500"))
         cache.set(
             f"saas:permission:{deposit.customer.project.appid}",
-            {"enable_risk_marking": True, "_fetched_at": time.time()},
+            {"enable_aml_screening": True, "_fetched_at": time.time()},
             None,
         )
-        score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.SEVERE,
+        score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.SEVERE,
             risk_score=Decimal("95"),
             detail_list=[],
             risk_detail=[],
@@ -584,47 +583,47 @@ class RiskMarkingServiceTests(RiskTestMixin, TestCase):
             raw_response={},
         )
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_called_once()
-        assessment = RiskAssessment.objects.get(deposit=deposit)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
+        assessment = AmlAssessment.objects.get(deposit=deposit)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
 
     @override_settings(IS_SAAS=True, INTERNAL_API_TOKEN="t")
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_deposit_saas_permission_denied_does_not_create_assessment(self, score):
         deposit = self.make_deposit(worth=Decimal("500"))
         cache.set(
             f"saas:permission:{deposit.customer.project.appid}",
-            {"enable_risk_marking": False, "_fetched_at": time.time()},
+            {"enable_aml_screening": False, "_fetched_at": time.time()},
             None,
         )
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(deposit=deposit).exists())
+        self.assertFalse(AmlAssessment.objects.filter(deposit=deposit).exists())
 
     @override_settings(IS_SAAS=True, INTERNAL_API_TOKEN="t")
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_deposit_saas_cold_cache_fails_closed(self, score):
         deposit = self.make_deposit(worth=Decimal("500"))
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_not_called()
-        self.assertFalse(RiskAssessment.objects.filter(deposit=deposit).exists())
+        self.assertFalse(AmlAssessment.objects.filter(deposit=deposit).exists())
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    @patch("risk.service.MistTrackOpenApiClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.MistTrackOpenApiClient.address_risk_score")
     def test_openapi_api_key_takes_precedence_over_quicknode_endpoint(
         self, openapi_score, quicknode_score
     ):
         invoice = self.make_invoice(worth=Decimal("500"))
         self.system_settings.misttrack_openapi_api_key = "openapi-secret"
         self.system_settings.save(update_fields=["misttrack_openapi_api_key"])
-        openapi_score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.HIGH,
+        openapi_score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.HIGH,
             risk_score=Decimal("75"),
             detail_list=[],
             risk_detail=[],
@@ -632,52 +631,43 @@ class RiskMarkingServiceTests(RiskTestMixin, TestCase):
             raw_response={"risk_level": "High", "score": 75},
         )
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         openapi_score.assert_called_once_with(
             coin="ETH", address=self.transfer.from_address
         )
         quicknode_score.assert_not_called()
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.source, RiskSource.MISTTRACK_OPENAPI)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
+        assessment = AmlAssessment.objects.get(invoice=invoice)
+        self.assertEqual(assessment.source, AmlProvider.MISTTRACK_OPENAPI)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
         invoice.refresh_from_db()
-        self.assertEqual(invoice.risk_level, RiskLevel.HIGH)
+        self.assertEqual(invoice.risk_level, AmlRiskLevel.HIGH)
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
-    def test_quicknode_unsupported_chain_is_skipped_without_external_query(self, score):
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
+    def test_quicknode_unsupported_chain_does_not_create_assessment(self, score):
         invoice = self.make_invoice(worth=Decimal("500"))
         self.chain.code = ChainCode.Polygon
         self.chain.save(update_fields=["code"])
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_not_called()
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.source, RiskSource.QUICKNODE_MISTTRACK)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SKIPPED)
-        self.assertEqual(assessment.skip_reason, RiskSkipReason.UNSUPPORTED_CHAIN)
-        self.assertIn("unsupported QuickNode MistTrack chain", assessment.error_message)
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
 
-    @patch("risk.service.MistTrackOpenApiClient.address_risk_score")
-    def test_openapi_unsupported_chain_is_skipped_without_external_query(self, score):
-        """OpenAPI 路径未覆盖的链/币种与 QuickNode 一致走 SKIPPED 而非 FAILED。"""
+    @patch("aml.service.MistTrackOpenApiClient.address_risk_score")
+    def test_openapi_unsupported_chain_does_not_create_assessment(self, score):
         invoice = self.make_invoice(worth=Decimal("500"))
         self.system_settings.misttrack_openapi_api_key = "openapi-secret"
         self.system_settings.save(update_fields=["misttrack_openapi_api_key"])
-        # 切到 OpenAPI 也未映射的某条 EVM 链
         self.chain.code = ChainCode.Scroll
         self.chain.save(update_fields=["code"])
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_not_called()
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.source, RiskSource.MISTTRACK_OPENAPI)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SKIPPED)
-        self.assertEqual(assessment.skip_reason, RiskSkipReason.UNSUPPORTED_CHAIN)
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
 
-    def test_provider_not_configured_records_skip_reason(self):
+    def test_provider_not_configured_does_not_create_assessment(self):
         invoice = self.make_invoice(worth=Decimal("500"))
         self.system_settings.quicknode_misttrack_endpoint_url = ""
         self.system_settings.misttrack_openapi_api_key = ""
@@ -688,23 +678,19 @@ class RiskMarkingServiceTests(RiskTestMixin, TestCase):
             ]
         )
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SKIPPED)
-        self.assertEqual(
-            assessment.skip_reason, RiskSkipReason.PROVIDER_NOT_CONFIGURED
-        )
+        self.assertFalse(AmlAssessment.objects.filter(invoice=invoice).exists())
 
 
 @override_settings(IS_SAAS=False)
-class RiskBusinessDispatchTests(RiskTestMixin, TestCase):
-    @patch("risk.tasks.mark_invoice_risk.delay")
-    def test_invoice_match_enqueues_risk_after_transaction_commit(self, delay):
+class AmlBusinessDispatchTests(AmlTestMixin, TestCase):
+    @patch("aml.tasks.screen_invoice_aml.delay")
+    def test_invoice_match_enqueues_aml_after_transaction_commit(self, delay):
         invoice = Invoice.objects.create(
             project=self.project,
-            out_no="risk-match",
-            title="Risk match",
+            out_no="aml-match",
+            title="AML match",
             currency="USD",
             amount=Decimal("500"),
             methods={"ETH": ["ethereum-mainnet"]},
@@ -729,11 +715,11 @@ class RiskBusinessDispatchTests(RiskTestMixin, TestCase):
         delay.assert_called_once_with(invoice.pk)
 
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_invoice_success_updates_assessment_snapshot_and_cache(self, score):
         invoice = self.make_invoice(worth=Decimal("500"))
-        score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.SEVERE,
+        score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.SEVERE,
             risk_score=Decimal("95"),
             detail_list=["Mixer"],
             risk_detail=[{"mixer": 1}],
@@ -741,27 +727,27 @@ class RiskBusinessDispatchTests(RiskTestMixin, TestCase):
             raw_response={"risk_level": "Severe", "score": 95},
         )
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
         score.assert_called_once()
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.source, RiskSource.QUICKNODE_MISTTRACK)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
-        self.assertEqual(assessment.risk_level, RiskLevel.SEVERE)
+        assessment = AmlAssessment.objects.get(invoice=invoice)
+        self.assertEqual(assessment.source, AmlProvider.QUICKNODE_MISTTRACK)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
+        self.assertEqual(assessment.risk_level, AmlRiskLevel.SEVERE)
         self.assertEqual(assessment.risk_score, Decimal("95"))
         invoice.refresh_from_db()
-        self.assertEqual(invoice.risk_level, RiskLevel.SEVERE)
+        self.assertEqual(invoice.risk_level, AmlRiskLevel.SEVERE)
         self.assertEqual(invoice.risk_score, Decimal("95"))
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_deposit_uses_cached_address_result_without_external_query(self, score):
         deposit = self.make_deposit(worth=Decimal("500"))
-        RiskMarkingService.write_cache(
-            source=RiskSource.QUICKNODE_MISTTRACK,
+        AmlScreeningService.write_cache(
+            source=AmlProvider.QUICKNODE_MISTTRACK,
             chain=self.chain.code,
             address=self.transfer.from_address,
             result={
-                "risk_level": RiskLevel.MODERATE,
+                "risk_level": AmlRiskLevel.MODERATE,
                 "risk_score": "61",
                 "detail_list": ["Phishing"],
                 "risk_detail": [{"phishing": 1}],
@@ -771,33 +757,33 @@ class RiskBusinessDispatchTests(RiskTestMixin, TestCase):
             timeout=300,
         )
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_not_called()
-        assessment = RiskAssessment.objects.get(deposit=deposit)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.SUCCESS)
-        self.assertEqual(assessment.risk_level, RiskLevel.MODERATE)
+        assessment = AmlAssessment.objects.get(deposit=deposit)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.SUCCESS)
+        self.assertEqual(assessment.risk_level, AmlRiskLevel.MODERATE)
         self.assertEqual(assessment.risk_score, Decimal("61"))
         deposit.refresh_from_db()
-        self.assertEqual(deposit.risk_level, RiskLevel.MODERATE)
+        self.assertEqual(deposit.risk_level, AmlRiskLevel.MODERATE)
         self.assertEqual(deposit.risk_score, Decimal("61"))
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_force_refresh_threshold_bypasses_cache(self, score):
         deposit = self.make_deposit(worth=Decimal("10000.01"))
-        score.return_value = MistTrackRiskResult(
-            risk_level=RiskLevel.LOW,
+        score.return_value = MistTrackAmlResult(
+            risk_level=AmlRiskLevel.LOW,
             risk_score=Decimal("10"),
             detail_list=[],
             risk_detail=[],
             risk_report_url="",
             raw_response={"risk_level": "Low", "score": 10},
         )
-        RiskMarkingService.write_cache(
-            source=RiskSource.QUICKNODE_MISTTRACK,
+        AmlScreeningService.write_cache(
+            source=AmlProvider.QUICKNODE_MISTTRACK,
             address=self.transfer.from_address,
             result={
-                "risk_level": RiskLevel.SEVERE,
+                "risk_level": AmlRiskLevel.SEVERE,
                 "risk_score": "99",
                 "detail_list": [],
                 "risk_detail": [],
@@ -807,25 +793,25 @@ class RiskBusinessDispatchTests(RiskTestMixin, TestCase):
             timeout=300,
         )
 
-        RiskMarkingService.mark_deposit(deposit.pk)
+        AmlScreeningService.screen_deposit(deposit.pk)
 
         score.assert_called_once()
         deposit.refresh_from_db()
-        self.assertEqual(deposit.risk_level, RiskLevel.LOW)
+        self.assertEqual(deposit.risk_level, AmlRiskLevel.LOW)
         self.assertEqual(deposit.risk_score, Decimal("10"))
 
-    @patch("risk.service.QuicknodeMistTrackClient.address_risk_score")
+    @patch("aml.service.QuicknodeMistTrackClient.address_risk_score")
     def test_external_failure_records_failed_and_clears_snapshot(self, score):
         invoice = self.make_invoice(worth=Decimal("500"))
-        invoice.risk_level = RiskLevel.HIGH
+        invoice.risk_level = AmlRiskLevel.HIGH
         invoice.risk_score = Decimal("80")
         invoice.save(update_fields=["risk_level", "risk_score", "updated_at"])
         score.side_effect = RuntimeError("quicknode down")
 
-        RiskMarkingService.mark_invoice(invoice.pk)
+        AmlScreeningService.screen_invoice(invoice.pk)
 
-        assessment = RiskAssessment.objects.get(invoice=invoice)
-        self.assertEqual(assessment.status, RiskAssessmentStatus.FAILED)
+        assessment = AmlAssessment.objects.get(invoice=invoice)
+        self.assertEqual(assessment.status, AmlAssessmentStatus.FAILED)
         self.assertIn("quicknode down", assessment.error_message)
         invoice.refresh_from_db()
         self.assertIsNone(invoice.risk_level)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import structlog
+from aml.tasks import screen_deposit_aml
 from django.db import transaction as db_transaction
 from django.utils import timezone
-from risk.tasks import mark_deposit_risk
 
 from chains.models import Transfer
 from chains.models import TransferType
@@ -112,7 +112,7 @@ class DepositService:
             transfer=transfer,
         )
         cls.initialize_deposit(deposit)
-        db_transaction.on_commit(lambda: mark_deposit_risk.delay(deposit.pk))
+        db_transaction.on_commit(lambda: screen_deposit_aml.delay(deposit.pk))
         return True
 
     @classmethod

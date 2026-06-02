@@ -14,7 +14,7 @@ from django.utils.translation import gettext_lazy as _
 
 logger = structlog.get_logger()
 
-from risk.models import RiskLevel
+from aml.models import AmlRiskLevel
 
 from common.fields import AddressField
 from common.fields import SysNoField
@@ -132,7 +132,7 @@ class Invoice(models.Model):
     )
     risk_level = models.CharField(  # noqa: DJ001
         _("风险等级"),
-        choices=RiskLevel,
+        choices=AmlRiskLevel,
         max_length=16,
         null=True,
         blank=True,

@@ -61,13 +61,13 @@ class SystemSettingsAdmin(ModelAdmin):
             {"fields": ("vault_slot_collect_delay_minutes",)},
         ),
         (
-            "风控系统",
+            "AML 筛查",
             {
                 "fields": (
-                    "risk_marking_enabled",
-                    "risk_marking_threshold_usd",
-                    "risk_marking_cache_seconds",
-                    "risk_marking_force_refresh_threshold_usd",
+                    "aml_screening_enabled",
+                    "aml_screening_threshold_usd",
+                    "aml_screening_cache_seconds",
+                    "aml_screening_force_refresh_threshold_usd",
                     "misttrack_openapi_api_key",
                     "quicknode_misttrack_endpoint_url",
                 )
@@ -88,7 +88,7 @@ class SystemSettingsAdmin(ModelAdmin):
     readonly_fields = ("created_by", "updated_by", "created_at", "updated_at")
     list_display = (
         "id",
-        "risk_marking_enabled",
+        "aml_screening_enabled",
         "updated_by",
         "updated_at",
     )

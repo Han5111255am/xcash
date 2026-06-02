@@ -63,27 +63,27 @@ class SystemSettings(models.Model):
             "ERC20 到账确认后等待该时间再聚合归集，期间同槽位同币种不重复创建归集计划。"
         ),
     )
-    risk_marking_enabled = models.BooleanField(
-        _("开启风险标记"),
+    aml_screening_enabled = models.BooleanField(
+        _("开启 AML 筛查"),
         default=False,
-        help_text=_("开启后对高于风险查询阈值的账单和充币查询外部地址风险。"),
+        help_text=_("开启后对高于 AML 查询阈值的账单和充币查询外部地址风险。"),
     )
-    risk_marking_threshold_usd = models.DecimalField(
-        _("风险查询阈值(USD)"),
+    aml_screening_threshold_usd = models.DecimalField(
+        _("AML 查询阈值(USD)"),
         max_digits=16,
         decimal_places=6,
         default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
-        help_text=_("账单或充币价值大于该阈值时查询风险。"),
+        help_text=_("账单或充币价值大于该阈值时执行 AML 查询。"),
     )
-    risk_marking_cache_seconds = models.PositiveIntegerField(
-        _("风险查询缓存秒数"),
+    aml_screening_cache_seconds = models.PositiveIntegerField(
+        _("AML 查询缓存秒数"),
         default=3600,
         validators=[MinValueValidator(1)],
-        help_text=_("同一地址风险查询成功后在 Django 缓存中保留的秒数。"),
+        help_text=_("同一地址 AML 查询成功后在 Django 缓存中保留的秒数。"),
     )
-    risk_marking_force_refresh_threshold_usd = models.DecimalField(
-        _("风险查询强制刷新阈值(USD)"),
+    aml_screening_force_refresh_threshold_usd = models.DecimalField(
+        _("AML 查询强制刷新阈值(USD)"),
         max_digits=16,
         decimal_places=6,
         default=Decimal("10000"),

@@ -73,31 +73,31 @@ def get_vault_slot_collect_delay() -> timedelta:
     return timedelta(hours=6)
 
 
-def get_risk_marking_enabled() -> bool:
+def get_aml_screening_enabled() -> bool:
     system_settings = get_system_settings()
     if system_settings is not None:
-        return bool(system_settings.risk_marking_enabled)
+        return bool(system_settings.aml_screening_enabled)
     return False
 
 
-def get_risk_marking_threshold_usd() -> Decimal:
+def get_aml_screening_threshold_usd() -> Decimal:
     system_settings = get_system_settings()
     if system_settings is not None:
-        return Decimal(system_settings.risk_marking_threshold_usd)
+        return Decimal(system_settings.aml_screening_threshold_usd)
     return Decimal("0")
 
 
-def get_risk_marking_cache_seconds() -> int:
+def get_aml_screening_cache_seconds() -> int:
     system_settings = get_system_settings()
     if system_settings is not None:
-        return int(system_settings.risk_marking_cache_seconds)
+        return int(system_settings.aml_screening_cache_seconds)
     return 3600
 
 
-def get_risk_marking_force_refresh_threshold_usd() -> Decimal:
+def get_aml_screening_force_refresh_threshold_usd() -> Decimal:
     system_settings = get_system_settings()
     if system_settings is not None:
-        return Decimal(system_settings.risk_marking_force_refresh_threshold_usd)
+        return Decimal(system_settings.aml_screening_force_refresh_threshold_usd)
     return Decimal("10000")
 
 
