@@ -176,20 +176,6 @@ SIDEBAR_UNFOLD = {
                         "icon": "monitor_heart",
                         "link": reverse_lazy("operational-inspection"),
                     },
-                    {
-                        "title": _("告警通道"),
-                        "icon": "campaign",
-                        "link": reverse_lazy(
-                            "admin:alerts_projecttelegramalertconfig_changelist"
-                        ),
-                    },
-                    {
-                        "title": _("告警事件"),
-                        "icon": "warning",
-                        "link": reverse_lazy(
-                            "admin:alerts_projectalertstate_changelist"
-                        ),
-                    },
                 ],
             },
             {

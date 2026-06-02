@@ -31,20 +31,6 @@ class SystemSettings(models.Model):
         validators=[MinValueValidator(1)],
         help_text=_("管理员登录后台后，超过该时间无操作需重新登录。"),
     )
-    admin_sensitive_action_otp_max_age_seconds = models.PositiveIntegerField(
-        _("敏感动作两步验证超时(秒)"),
-        default=900,
-        validators=[MinValueValidator(60)],
-        help_text=_(
-            "超过该时间后，项目配置等高风险动作需要重新验证两步验证码。"
-        ),
-    )
-    alerts_repeat_interval_minutes = models.PositiveIntegerField(
-        _("告警重复发送间隔(分钟)"),
-        default=30,
-        validators=[MinValueValidator(1)],
-        help_text=_("同一项目同一告警在该时间窗内不重复发送。"),
-    )
     webhook_delivery_breaker_threshold = models.PositiveIntegerField(
         _("Webhook 熔断阈值"),
         default=30,

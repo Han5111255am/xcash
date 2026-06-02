@@ -28,7 +28,6 @@
 
     <form action="{{ app_path }}" method="post" id="login-form">
         {% csrf_token %}
-        {# OTP 登录链路依赖 next 参数贯穿密码登录和动态验证码验证两个阶段。 #}
         <input type="hidden" name="next" value="{{ next }}">
 
         {% include "unfold/helpers/field.html" with field=form.username %}

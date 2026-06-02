@@ -56,10 +56,6 @@ SAAS_CALLBACK_URL = env.str("SAAS_CALLBACK_URL", default="http://xcash-saas-cadd
 # CORS 默认关闭，由各环境配置显式开启或配置白名单。
 CORS_ALLOW_ALL_ORIGINS = False
 
-# Admin OTP
-OTP_TOTP_ISSUER = "Xcash Admin"
-# 高风险后台动作要求近期完成过 OTP 验证，避免长期存活会话直接放行资金审批。
-ADMIN_SENSITIVE_ACTION_OTP_MAX_AGE_SECONDS = 900
 DEFAULT_SUPERUSER_USERNAME = "admin"
 DEFAULT_SUPERUSER_PASSWORD = env.str(
     "DJANGO_DEFAULT_SUPERUSER_PASSWORD",
@@ -172,8 +168,6 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
 ]
 THIRD_PARTY_APPS = [
-    "django_otp",
-    "django_otp.plugins.otp_totp",
     "django_celery_results",
     "rest_framework",
     "rest_framework.authtoken",
@@ -183,8 +177,6 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "chains",
     "core",
-    # 项目级 Telegram 告警与通知日志统一收口到独立 alerts app，避免继续散落在业务模块里。
-    "alerts",
     "users",
     "projects",
     "currencies",
@@ -208,13 +200,6 @@ AUTH_USER_MODEL = "users.User"
 
 AUTHENTICATION_BACKENDS = ("django.contrib.auth.backends.ModelBackend",)
 
-# Alerts
-# ------------------------------------------------------------------------------
-# Telegram Bot Token 由平台统一托管；项目负责人只配置自己的 chat/thread 目标，不接触平台密钥。
-ALERTS_TELEGRAM_BOT_TOKEN = env.str("ALERTS_TELEGRAM_BOT_TOKEN", default="")
-ALERTS_TELEGRAM_API_BASE = "https://api.telegram.org"
-ALERTS_TELEGRAM_TIMEOUT = 5.0
-ALERTS_REPEAT_INTERVAL_MINUTES = 30
 # Session Settings
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # False表示关闭浏览器后session仍然有效
 SESSION_SAVE_EVERY_REQUEST = True  # 每次请求都更新session的过期时间
@@ -252,10 +237,6 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # 后台 session 超时由 SystemSettings 动态控制，每次请求刷新过期时间。
     "common.middlewares.AdminSessionTimeoutMiddleware",
-    # 让 request.user 挂载 otp_device / is_verified，后续后台访问控制统一复用这层状态。
-    "django_otp.middleware.OTPMiddleware",
-    # Admin 资金后台必须完成 OTP 验证后才能进入，避免仅凭密码拿到后台会话。
-    "users.middleware.AdminOTPRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "common.middlewares.ExceptionMiddleware",
     "common.middlewares.ProjectConfigMiddleware",

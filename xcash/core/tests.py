@@ -13,7 +13,6 @@ from django.core.cache import cache as _cache
 from django.core.management import call_command
 from django.test import SimpleTestCase
 from django.test import TestCase
-from django.test import override_settings
 from web3 import Web3
 
 from chains.constants import ChainType
@@ -24,8 +23,6 @@ from core.default_data import ensure_local_chains
 from core.models import SYSTEM_SETTINGS_CACHE_KEY
 from core.models import SystemSettings
 from core.models import SystemWallet
-from core.runtime_settings import get_admin_sensitive_action_otp_max_age_seconds
-from core.runtime_settings import get_alerts_repeat_interval_minutes
 from core.runtime_settings import get_webhook_delivery_breaker_threshold
 from core.runtime_settings import get_webhook_delivery_max_backoff_seconds
 from core.runtime_settings import get_webhook_delivery_max_retries
@@ -45,10 +42,6 @@ def tearDownModule():
     _cache.clear()
 
 
-@override_settings(
-    ADMIN_SENSITIVE_ACTION_OTP_MAX_AGE_SECONDS=900,
-    ALERTS_REPEAT_INTERVAL_MINUTES=30,
-)
 class SystemSettingsRuntimeTests(TestCase):
     def tearDown(self):
         cache.delete(SYSTEM_SETTINGS_CACHE_KEY)
@@ -57,15 +50,11 @@ class SystemSettingsRuntimeTests(TestCase):
     def test_runtime_settings_use_database_override_before_settings_fallback(self):
         # 系统运行参数中心存在记录时，业务读取应优先采用数据库值，而不是继续回退到 settings 常量。
         SystemSettings.objects.create(
-            admin_sensitive_action_otp_max_age_seconds=480,
-            alerts_repeat_interval_minutes=7,
             webhook_delivery_breaker_threshold=12,
             webhook_delivery_max_retries=9,
             webhook_delivery_max_backoff_seconds=45,
         )
 
-        self.assertEqual(get_admin_sensitive_action_otp_max_age_seconds(), 480)
-        self.assertEqual(get_alerts_repeat_interval_minutes(), 7)
         self.assertEqual(get_webhook_delivery_breaker_threshold(), 12)
         self.assertEqual(get_webhook_delivery_max_retries(), 9)
         self.assertEqual(get_webhook_delivery_max_backoff_seconds(), 45)

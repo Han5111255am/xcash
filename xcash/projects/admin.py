@@ -1,10 +1,6 @@
 from django import forms
 from django.contrib import admin
-from django.contrib.admin import helpers
-from django.contrib.admin.utils import flatten_fieldsets
-from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError
-from django.forms.formsets import all_valid
 from django.utils.html import format_html
 from django.utils.html import format_html_join
 from django.utils.translation import gettext_lazy as _
@@ -12,8 +8,6 @@ from unfold.decorators import display
 from unfold.widgets import UnfoldAdminTextInputWidget
 from web3 import Web3
 
-from alerts.admin import ProjectTelegramAlertConfigInline
-from alerts.models import ProjectTelegramAlertConfig
 from chains.adapters import AdapterFactory
 from chains.capabilities import ChainProductCapabilityService
 from chains.constants import ChainType
@@ -28,16 +22,6 @@ from invoices.models import EpayMerchant
 from projects.models import Customer
 from projects.models import DifferRecipientAddress
 from projects.models import Project
-from users.forms import OTPVerifyForm
-from users.models import AdminAccessLog
-from users.otp import AdminOTPRequiredError
-from users.otp import get_fresh_admin_sensitive_action_context
-from users.otp import get_pending_admin_user
-from users.otp import get_primary_totp_device
-from users.otp import record_admin_access
-from users.otp import refresh_admin_otp_verification
-from users.otp import set_pending_admin_otp
-from users.otp import verify_otp_token
 
 # Register your models here.
 
@@ -305,13 +289,10 @@ class EpayMerchantInline(StackedInline):
 
 @admin.register(Project)
 class ProjectAdmin(ModelAdmin):
-    change_form_outer_after_template = "admin/includes/project_change_otp_modal.html"
-    SENSITIVE_PROJECT_FIELDS = frozenset({"vault"})
     form = ProjectForm
     inlines = (
         DifferRecipientAddressInline,
         EpayMerchantInline,
-        ProjectTelegramAlertConfigInline,
     )
     list_display = (
         "name",
@@ -329,210 +310,10 @@ class ProjectAdmin(ModelAdmin):
     )
     search_fields = ("name", "appid", "webhook")
 
-    def _require_fresh_project_change_otp(self, request):
-        cached_context = getattr(request, "_project_sensitive_action_context", None)
-        if cached_context is not None:
-            return cached_context
-
-        context = get_fresh_admin_sensitive_action_context(
-            request=request,
-            source="admin_project_change",
-        )
-        request._project_sensitive_action_context = context
-        return context
-
-    def _project_form_changes_sensitive_fields(self, form) -> bool:
-        # 只有资金基础设施字段真正变化时才要求 fresh OTP，避免普通项目配置编辑被一刀切。
-        if form is None:
-            return False
-        changed_fields = set(getattr(form, "changed_data", ()) or ())
-        return bool(changed_fields & self.SENSITIVE_PROJECT_FIELDS)
-
-    def _project_post_changes_sensitive_fields(self, request, obj: Project) -> bool:
-        # changeform_view 需要在进入保存前预判风险级别，这里复用 admin form 的变更比较逻辑。
-        form_class = self.get_form(request, obj)
-        bound_form = form_class(request.POST, request.FILES, instance=obj)
-        return self._project_form_changes_sensitive_fields(bound_form)
-
-    def _build_otp_modal_hidden_fields(self, request):
-        hidden_fields = []
-        for key, values in request.POST.lists():
-            if key in {"csrfmiddlewaretoken", "token", "_otp_modal_submit"}:
-                continue
-            hidden_fields.extend({"name": key, "value": value} for value in values)
-        return hidden_fields
-
-    def _render_project_changeform_with_otp_modal(
-        self,
-        request,
-        object_id,
-        form_url="",
-        extra_context=None,
-        *,
-        form: OTPVerifyForm,
-    ):
-        obj = self.get_object(request, object_id)
-        if obj is None:
-            return self._get_obj_does_not_exist_redirect(request, self.opts, object_id)
-
-        fieldsets = self.get_fieldsets(request, obj)
-        model_form_class = self.get_form(
-            request,
-            obj,
-            change=True,
-            fields=flatten_fieldsets(fieldsets),
-        )
-        bound_form = model_form_class(request.POST, request.FILES, instance=obj)
-        formsets, inline_instances = self._create_formsets(
-            request, bound_form.instance, change=True
-        )
-        bound_form.is_valid()
-        all_valid(formsets)
-
-        readonly_fields = self.get_readonly_fields(request, obj)
-        admin_form = helpers.AdminForm(
-            bound_form,
-            list(fieldsets),
-            self.get_prepopulated_fields(request, obj),
-            readonly_fields,
-            model_admin=self,
-        )
-        media = self.media + admin_form.media
-        inline_formsets = self.get_inline_formsets(
-            request, formsets, inline_instances, obj
-        )
-        for inline_formset in inline_formsets:
-            media += inline_formset.media
-
-        modal_context = {
-            **self.admin_site.each_context(request),
-            "title": _("Change %s") % self.opts.verbose_name,
-            "subtitle": str(obj),
-            "adminform": admin_form,
-            "object_id": object_id,
-            "original": obj,
-            "is_popup": False,
-            "to_field": None,
-            "media": media,
-            "inline_admin_formsets": inline_formsets,
-            "errors": helpers.AdminErrorList(bound_form, formsets),
-            "preserved_filters": self.get_preserved_filters(request),
-            "otp_modal_open": True,
-            "otp_verify_form": form,
-            "otp_modal_locked_title": _("继续保存前需要重新验证"),
-            "otp_modal_locked_text": _(
-                "项目资金配置属于高风险配置。请输入一次两步验证码后继续保存。"
-            ),
-            "otp_modal_submit_label": _("验证并保存"),
-            "otp_modal_hidden_fields": self._build_otp_modal_hidden_fields(request),
-        }
-        modal_context.update(extra_context or {})
-        # 这里显式复用 admin change form 渲染链路，保证项目页字段和 inline 在弹窗出现时仍保持原始填写状态。
-        return self.render_change_form(
-            request,
-            modal_context,
-            add=False,
-            change=True,
-            obj=obj,
-            form_url=form_url,
-        )
-
-    def _handle_project_change_modal_verification(
-        self, request, object_id, form_url="", extra_context=None
-    ):
-        pending_user = get_pending_admin_user(request)
-        if pending_user is None or pending_user.pk != request.user.pk:
-            raise PermissionDenied("当前会话缺少可用的两步验证上下文")
-
-        device = get_primary_totp_device(user=pending_user, confirmed=True)
-        if device is None:
-            raise PermissionDenied("当前账号尚未绑定两步验证设备")
-
-        form = OTPVerifyForm(request.POST)
-        if not form.is_valid():
-            return self._render_project_changeform_with_otp_modal(
-                request,
-                object_id,
-                form_url,
-                extra_context,
-                form=form,
-            )
-        if not verify_otp_token(device, form.cleaned_data["token"]):
-            record_admin_access(
-                request=request,
-                action=AdminAccessLog.Action.OTP_VERIFY,
-                result=AdminAccessLog.Result.FAILED,
-                user=pending_user,
-                reason="project_change_modal_invalid_token",
-            )
-            form.add_error("token", _("两步验证码无效，请检查设备时间或重新输入。"))
-            return self._render_project_changeform_with_otp_modal(
-                request,
-                object_id,
-                form_url,
-                extra_context,
-                form=form,
-            )
-
-        record_admin_access(
-            request=request,
-            action=AdminAccessLog.Action.OTP_VERIFY,
-            result=AdminAccessLog.Result.SUCCEEDED,
-            user=pending_user,
-            reason="project_change_modal_verified",
-        )
-        refresh_admin_otp_verification(request, user=pending_user, device=device)
-        request._project_sensitive_action_context = (
-            get_fresh_admin_sensitive_action_context(
-                request=request, source="admin_project_change"
-            )
-        )
-        return super().changeform_view(request, object_id, form_url, extra_context)
-
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == "hmac_key":
             kwargs["widget"] = ProjectHmacKeyWidget()
         return super().formfield_for_dbfield(db_field, request, **kwargs)
-
-    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
-        if request.method == "POST" and object_id:
-            project = self.get_object(request, object_id)
-            if project is not None and self._project_post_changes_sensitive_fields(
-                request, project
-            ):
-                if request.POST.get("_otp_modal_submit") == "1":
-                    return self._handle_project_change_modal_verification(
-                        request,
-                        object_id,
-                        form_url,
-                        extra_context,
-                    )
-                try:
-                    # 只有资金基础设施字段变化时才在入口处前置 OTP，保持修改体验与风险等级匹配。
-                    self._require_fresh_project_change_otp(request)
-                except AdminOTPRequiredError:
-                    set_pending_admin_otp(
-                        request,
-                        user=request.user,
-                        next_path=request.get_full_path(),
-                    )
-                    return self._render_project_changeform_with_otp_modal(
-                        request,
-                        object_id,
-                        form_url,
-                        extra_context,
-                        form=OTPVerifyForm(),
-                    )
-        return super().changeform_view(request, object_id, form_url, extra_context)
-
-    def save_model(self, request, obj, form, change):
-        if change and self._project_form_changes_sensitive_fields(form):
-            # changelist_editable 等入口不会经过 changeform_view，save_model 这里仍需保留风控字段兜底校验。
-            try:
-                self._require_fresh_project_change_otp(request)
-            except AdminOTPRequiredError as exc:
-                raise PermissionDenied(str(exc)) from exc
-        super().save_model(request, obj, form, change)
 
     def get_form(self, request, obj=None, **kwargs):
         form_class = super().get_form(request, obj, **kwargs)
@@ -548,24 +329,6 @@ class ProjectAdmin(ModelAdmin):
         if obj is None:
             return []
         return super().get_inline_instances(request, obj=obj)
-
-    def save_related(self, request, form, formsets, change):
-        # Telegram 配置需要记录创建/更新人，因此保留 save_related 定制逻辑。
-        form.save_m2m()
-        for formset in formsets:
-            if formset.model is ProjectTelegramAlertConfig:
-                instances = formset.save(commit=False)
-                for instance in instances:
-                    instance.project = form.instance
-                    if instance.pk:
-                        instance.updated_by = request.user
-                    else:
-                        instance.created_by = request.user
-                        instance.updated_by = request.user
-                    instance.save()
-                formset.save_m2m()
-            else:
-                formset.save()
 
     def get_readonly_fields(self, request, obj=None):
         if obj:  # 修改项目

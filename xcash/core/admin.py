@@ -35,13 +35,8 @@ class SystemSettingsAdmin(ModelAdmin):
             {
                 "fields": (
                     "admin_session_timeout_minutes",
-                    "admin_sensitive_action_otp_max_age_seconds",
                 )
             },
-        ),
-        (
-            "告警策略",
-            {"fields": ("alerts_repeat_interval_minutes",)},
         ),
         (
             "Webhook 投递",
@@ -94,8 +89,6 @@ class SystemSettingsAdmin(ModelAdmin):
     list_display = (
         "id",
         "risk_marking_enabled",
-        "admin_sensitive_action_otp_max_age_seconds",
-        "alerts_repeat_interval_minutes",
         "updated_by",
         "updated_at",
     )

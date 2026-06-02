@@ -1,10 +1,7 @@
 from django.urls import path
 from django_smart_ratelimit import rate_limit
 
-from .otp import get_admin_otp_ratelimit_key
 from .views import LoginView
-from .views import OTPSetupView
-from .views import OTPVerifyView
 from .views import SignupDisabledView
 
 app_name = "users"
@@ -20,23 +17,5 @@ urlpatterns = [
             skip_if=lambda req: req.method != "POST",
         )(LoginView.as_view()),
         name="login",
-    ),
-    path(
-        "otp/setup",
-        rate_limit(
-            key=get_admin_otp_ratelimit_key,
-            rate="30/h",
-            skip_if=lambda req: req.method != "POST",
-        )(OTPSetupView.as_view()),
-        name="otp_setup",
-    ),
-    path(
-        "otp/verify",
-        rate_limit(
-            key=get_admin_otp_ratelimit_key,
-            rate="60/h",
-            skip_if=lambda req: req.method != "POST",
-        )(OTPVerifyView.as_view()),
-        name="otp_verify",
     ),
 ]

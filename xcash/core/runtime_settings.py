@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from django.conf import settings
 from django.core.cache import cache
 
 from core.models import SYSTEM_SETTINGS_CACHE_KEY
@@ -37,20 +36,6 @@ def get_admin_session_timeout_seconds() -> int:
     if system_settings is not None:
         return int(system_settings.admin_session_timeout_minutes) * 60
     return 10 * 60
-
-
-def get_admin_sensitive_action_otp_max_age_seconds() -> int:
-    system_settings = get_system_settings()
-    if system_settings is not None:
-        return int(system_settings.admin_sensitive_action_otp_max_age_seconds)
-    return int(settings.ADMIN_SENSITIVE_ACTION_OTP_MAX_AGE_SECONDS)
-
-
-def get_alerts_repeat_interval_minutes() -> int:
-    system_settings = get_system_settings()
-    if system_settings is not None:
-        return int(system_settings.alerts_repeat_interval_minutes)
-    return int(settings.ALERTS_REPEAT_INTERVAL_MINUTES)
 
 
 def get_webhook_delivery_breaker_threshold() -> int:

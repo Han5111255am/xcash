@@ -29,8 +29,6 @@ dependencies = [
     "django-celery-results==2.6.0",
     # Logging
     "structlog==25.5.0",
-    "django-otp>=1.7.0",
-    "qrcode>=8.2",
     "gunicorn==26.0.0",
     # 迁移文件在模块顶层 import IgnoreMigration，production migrate 必须能加载该符号；
     # 仅 dev settings 把它加入 INSTALLED_APPS，production 装而不启用，运行时无副作用。
@@ -286,7 +284,6 @@ line-ending = "auto"
 force-single-line = true
 # 声明本地 app，确保排序为 stdlib → third-party → first-party
 known-first-party = [
-    "alerts",
     "chains",
     "common",
     "config",

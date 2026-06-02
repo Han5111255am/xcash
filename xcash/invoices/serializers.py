@@ -1,8 +1,8 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
-from django_otp.plugins.otp_email.conf import settings
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.serializers import Serializer

@@ -1,12 +1,16 @@
 from django.contrib import admin
-from django.contrib import messages
 from django.contrib.auth import authenticate
+from django.contrib.auth import login as auth_login
 from django.http import Http404
 from django.shortcuts import redirect
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import FormView
 from django.views.generic import View
+
+from .forms import LoginForm
+from .models import AdminAccessLog
+from .models import User
 
 
 def _safe_next_path(request) -> str:
@@ -17,37 +21,40 @@ def _safe_next_path(request) -> str:
     return "/"
 
 
-from .forms import LoginForm
-from .forms import OTPSetupForm
-from .forms import OTPVerifyForm
-from .models import AdminAccessLog
-from .models import User
-from .otp import build_totp_qr_data_url
-from .otp import complete_admin_otp_login
-from .otp import get_or_create_pending_totp_device
-from .otp import get_pending_admin_next_path
-from .otp import get_pending_admin_user
-from .otp import get_primary_totp_device
-from .otp import get_totp_secret
-from .otp import record_admin_access
-from .otp import set_pending_admin_otp
-from .otp import verify_otp_token
+def record_admin_access(
+    *,
+    request,
+    action: str,
+    result: str,
+    user=None,
+    reason: str = "",
+    username_snapshot: str | None = None,
+) -> None:
+    username = (
+        username_snapshot or getattr(user, "username", "") or "anonymous"
+    ).strip() or "anonymous"
+    AdminAccessLog.objects.create(
+        user=user,
+        username_snapshot=username[:150],
+        ip=request.META.get("REMOTE_ADDR") or None,
+        user_agent=request.headers.get("user-agent", "")[:1024],
+        action=action,
+        result=result,
+        reason=reason[:1024],
+    )
 
 
 class AdminContextMixin:
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)  # noqa
         ctx.update(admin.site.each_context(self.request))  # noqa
-        # 认证模板统一依赖 app_path，显式补齐后可复用现有登录页结构。
         ctx["app_path"] = self.request.get_full_path()
         return ctx
 
     def dispatch(self, request, *args, **kwargs):
-        # 已完成 OTP 的后台用户无需再次走登录/绑定页面。
         if (
             request.user.is_authenticated
             and request.user.is_staff
-            and request.user.is_verified()
             and request.path != "/logout/"
         ):
             return redirect("/")
@@ -66,20 +73,7 @@ class LoginView(AdminContextMixin, FormView):
         user: User | None = authenticate(
             self.request, username=username, password=password
         )
-        if user is not None:
-            next_path = _safe_next_path(self.request)
-            set_pending_admin_otp(self.request, user=user, next_path=next_path)
-            record_admin_access(
-                request=self.request,
-                action=AdminAccessLog.Action.PASSWORD_LOGIN,
-                result=AdminAccessLog.Result.SUCCEEDED,
-                user=user,
-                reason="password_ok",
-            )
-            if get_primary_totp_device(user=user, confirmed=True) is not None:
-                return redirect("users:otp_verify")
-            return redirect("users:otp_setup")
-        else:
+        if user is None:
             record_admin_access(
                 request=self.request,
                 action=AdminAccessLog.Action.PASSWORD_LOGIN,
@@ -90,6 +84,16 @@ class LoginView(AdminContextMixin, FormView):
             self._password_login_failure_recorded = True
             form.add_error(None, _("用户名或密码错误。"))
             return self.form_invalid(form)
+
+        auth_login(self.request, user)
+        record_admin_access(
+            request=self.request,
+            action=AdminAccessLog.Action.PASSWORD_LOGIN,
+            result=AdminAccessLog.Result.SUCCEEDED,
+            user=user,
+            reason="password_ok",
+        )
+        return redirect(_safe_next_path(self.request))
 
     def form_invalid(self, form):
         username = self.request.POST.get("username", "")
@@ -106,122 +110,7 @@ class LoginView(AdminContextMixin, FormView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["title"] = _("登录")
-        # 登录成功后的目标地址需要显式回传到表单，避免 OTP 完成后丢失跳转上下文。
         context["next"] = _safe_next_path(self.request)
-        return context
-
-
-class OTPContextMixin(AdminContextMixin):
-    pending_user: User | None = None
-
-    def prepare_otp_state(self):
-        return None
-
-    def dispatch(self, request, *args, **kwargs):
-        self.pending_user = get_pending_admin_user(request)
-        if self.pending_user is None:
-            messages.error(request, _("请先完成用户名和密码登录。"))
-            return redirect("users:login")
-        prepared_response = self.prepare_otp_state()
-        if prepared_response is not None:
-            return prepared_response
-        return super().dispatch(request, *args, **kwargs)
-
-    def get_success_url(self):
-        return get_pending_admin_next_path(self.request)
-
-
-class OTPSetupView(OTPContextMixin, FormView):
-    form_class = OTPSetupForm
-    template_name = "auth/otp_setup.html"
-
-    def prepare_otp_state(self):
-        if get_primary_totp_device(user=self.pending_user, confirmed=True) is not None:
-            return redirect("users:otp_verify")
-        self.device = get_or_create_pending_totp_device(user=self.pending_user)
-        return None
-
-    def form_valid(self, form):
-        if form.cleaned_data.get("device_name"):
-            self.device.name = form.cleaned_data["device_name"]
-            self.device.save(update_fields=["name"])
-        if not verify_otp_token(self.device, form.cleaned_data["token"]):
-            record_admin_access(
-                request=self.request,
-                action=AdminAccessLog.Action.OTP_SETUP,
-                result=AdminAccessLog.Result.FAILED,
-                user=self.pending_user,
-                reason="invalid_token",
-            )
-            form.add_error("token", _("两步验证码无效，请检查设备时间或重新输入。"))
-            return self.form_invalid(form)
-
-        self.device.confirmed = True
-        self.device.save(update_fields=["confirmed"])
-        record_admin_access(
-            request=self.request,
-            action=AdminAccessLog.Action.OTP_SETUP,
-            result=AdminAccessLog.Result.SUCCEEDED,
-            user=self.pending_user,
-            reason="device_confirmed",
-        )
-        return complete_admin_otp_login(
-            self.request,
-            user=self.pending_user,
-            device=self.device,
-        )
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["title"] = _("绑定两步验证")
-        context["otp_secret"] = get_totp_secret(device=self.device)
-        # 绑定页优先展示本地生成的二维码，手动密钥只作为扫码失败时的备用方案。
-        context["otp_qr_data_url"] = build_totp_qr_data_url(
-            config_url=self.device.config_url
-        )
-        context["next"] = self.get_success_url()
-        return context
-
-
-class OTPVerifyView(OTPContextMixin, FormView):
-    form_class = OTPVerifyForm
-    template_name = "auth/otp_verify.html"
-
-    def prepare_otp_state(self):
-        self.device = get_primary_totp_device(user=self.pending_user, confirmed=True)
-        if self.device is None:
-            return redirect("users:otp_setup")
-        return None
-
-    def form_valid(self, form):
-        if not verify_otp_token(self.device, form.cleaned_data["token"]):
-            record_admin_access(
-                request=self.request,
-                action=AdminAccessLog.Action.OTP_VERIFY,
-                result=AdminAccessLog.Result.FAILED,
-                user=self.pending_user,
-                reason="invalid_token",
-            )
-            form.add_error("token", _("两步验证码无效，请检查设备时间或重新输入。"))
-            return self.form_invalid(form)
-
-        record_admin_access(
-            request=self.request,
-            action=AdminAccessLog.Action.OTP_VERIFY,
-            result=AdminAccessLog.Result.SUCCEEDED,
-            user=self.pending_user,
-            reason="otp_verified",
-        )
-        return complete_admin_otp_login(
-            self.request,
-            user=self.pending_user,
-            device=self.device,
-        )
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context["title"] = _("验证两步验证码")
-        context["next"] = self.get_success_url()
         return context
 
 

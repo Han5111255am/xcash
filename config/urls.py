@@ -14,7 +14,7 @@ urlpatterns = [
     # 支付前端 SPA：返回 index.html，由 React 根据 sys_no 渲染支付页
     path("pay/<str:sys_no>", payment_view, name="payment-invoice"),
     path("i18n/", include("django.conf.urls.i18n")),
-    # 自定义登录 / OTP 路由需要先于 admin.site.urls 注册，才能接管默认 /login/ 入口。
+    # 自定义登录路由需要先于 admin.site.urls 注册，才能接管默认 /login/ 入口。
     path("", include("users.urls")),
     path(
         "operations/inspection",

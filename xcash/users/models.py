@@ -37,9 +37,6 @@ class User(AbstractUser):
 class AdminAccessLog(models.Model):
     class Action(models.TextChoices):
         PASSWORD_LOGIN = "password_login", _("密码登录")
-        OTP_VERIFY = "otp_verify", _("两步验证校验")
-        OTP_SETUP = "otp_setup", _("两步验证绑定")
-        OTP_ROTATE = "otp_rotate", _("两步验证修改")
         LOGOUT = "logout", _("退出登录")
 
     class Result(models.TextChoices):
