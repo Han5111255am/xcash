@@ -114,7 +114,7 @@ def make_tx_task(
     *,
     chain: Chain,
     address: Address,
-    tx_type: TxTaskType = TxTaskType.Withdrawal,
+    tx_type: TxTaskType = TxTaskType.VaultSlotCollect,
     crypto: Crypto | None = None,
     amount: Decimal = Decimal("1.0"),
     recipient_suffix: str = "ff",

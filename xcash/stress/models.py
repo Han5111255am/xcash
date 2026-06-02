@@ -25,16 +25,6 @@ class InvoiceStressCaseStatus(models.TextChoices):
     SKIPPED = "skipped", _("跳过")
 
 
-class WithdrawalStressCaseStatus(models.TextChoices):
-    PENDING = "pending", _("等待执行")
-    CREATING = "creating", _("创建提币中")
-    CREATED = "created", _("提币单已创建")
-    CONFIRMING = "confirming", _("等待链上确认")
-    SUCCEEDED = "succeeded", _("成功")
-    FAILED = "failed", _("失败")
-    SKIPPED = "skipped", _("跳过")
-
-
 class DepositStressCaseStatus(models.TextChoices):
     PENDING = "pending", _("等待执行")
     CREATING = "creating", _("获取充值地址中")
@@ -49,7 +39,6 @@ class DepositStressCaseStatus(models.TextChoices):
 class StressRun(models.Model):
     name = models.CharField(_("名称"), max_length=128)
     count = models.PositiveIntegerField(_("支付模拟次数"), default=0)
-    withdrawal_count = models.PositiveIntegerField(_("提币模拟次数"), default=0)
     deposit_count = models.PositiveIntegerField(_("充币模拟次数"), default=0)
     deposit_customer_count = models.PositiveIntegerField(_("充币客户数"), default=0)
     status = models.CharField(
@@ -160,64 +149,6 @@ class InvoiceStressCase(models.Model):
 
     def __str__(self):
         return f"#{self.sequence} {self.get_status_display()}"
-
-
-class WithdrawalStressCase(models.Model):
-    stress_run = models.ForeignKey(
-        StressRun,
-        on_delete=models.CASCADE,
-        related_name="withdrawal_cases",
-        verbose_name=_("测试轮次"),
-    )
-    sequence = models.PositiveIntegerField(_("序号"))
-    scheduled_offset = models.FloatField(
-        _("调度偏移(秒)"),
-        help_text=_("相对于 Stress.started_at 的偏移秒数"),
-    )
-
-    # 执行过程中填充
-    withdrawal_sys_no = models.CharField(_("系统单号"), max_length=64, blank=True)
-    withdrawal_out_no = models.CharField(_("商户单号"), max_length=64, blank=True)
-    crypto = models.CharField(_("币种"), max_length=32)
-    chain = models.CharField(_("链"), max_length=32)
-    to_address = models.CharField(_("目的地址"), max_length=256)
-    amount = models.DecimalField(
-        _("提币金额"),
-        max_digits=36,
-        decimal_places=18,
-    )
-    tx_hash = models.CharField(_("交易哈希"), max_length=128, blank=True)
-
-    # Webhook 验证结果
-    webhook_received = models.BooleanField(_("已收到 Webhook"), default=False)
-    webhook_signature_ok = models.BooleanField(_("签名验证"), default=False)
-    webhook_payload_ok = models.BooleanField(_("Payload 验证"), default=False)
-    webhook_nonce_ok = models.BooleanField(_("Nonce 验证"), default=False)
-    webhook_timestamp_ok = models.BooleanField(_("时间戳验证"), default=False)
-    webhook_received_nonces = models.JSONField(
-        _("已收到的 Nonce 列表"), default=list, blank=True
-    )
-
-    status = models.CharField(
-        _("状态"),
-        max_length=16,
-        choices=WithdrawalStressCaseStatus,
-        default=WithdrawalStressCaseStatus.PENDING,
-    )
-    error = models.TextField(_("错误信息"), blank=True)
-
-    started_at = models.DateTimeField(_("开始时间"), null=True, blank=True)
-    api_done_at = models.DateTimeField(_("提币 API 完成时间"), null=True, blank=True)
-    webhook_received_at = models.DateTimeField(_("Webhook 处理完成时间"), null=True, blank=True)
-    finished_at = models.DateTimeField(_("完成时间"), null=True, blank=True)
-
-    class Meta:
-        verbose_name = _("提币测试")
-        verbose_name_plural = _("提币测试")
-        ordering = ["stress_run", "sequence"]
-
-    def __str__(self):
-        return f"WD#{self.sequence} {self.get_status_display()}"
 
 
 class DepositStressCase(models.Model):

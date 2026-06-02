@@ -127,14 +127,14 @@ class ProjectAdminTests(TestCase):
             )
         )
 
-    def test_project_admin_save_model_requires_fresh_otp_for_withdrawal_policy_change(
+    def test_project_admin_save_model_requires_fresh_otp_for_vault_change(
         self,
     ):
         admin_instance = ProjectAdmin(Project, admin.site)
         request = self._build_project_owner_request(
             verified_at=timezone.now() - timedelta(minutes=16)
         )
-        form = SimpleNamespace(changed_data=["withdrawal_single_limit"])
+        form = SimpleNamespace(changed_data=["vault"])
 
         with self.assertRaises(PermissionDenied):
             admin_instance.save_model(request, self.project, form=form, change=True)
@@ -164,32 +164,6 @@ class ProjectAdminTests(TestCase):
 
         otp_mock.assert_not_called()
         save_model_mock.assert_called_once()
-
-    @override_settings(WITHDRAWAL_ENABLED=False)
-    def test_project_admin_hides_withdrawal_policy_when_feature_disabled(self):
-        admin_instance = ProjectAdmin(Project, admin.site)
-        request = self.factory.get("/admin/projects/project")
-        request.user = User.objects.create_superuser(
-            username="project-admin-hidden", password="secret"
-        )
-
-        self.assertNotIn(
-            "display_withdrawal_policy",
-            admin_instance.get_list_display(request),
-        )
-        self.assertNotIn(
-            "withdrawal_review_required",
-            admin_instance.get_list_filter(request),
-        )
-        self.assertNotIn(
-            "提币风控",
-            [
-                str(title)
-                for title, _options in admin_instance.get_fieldsets(
-                    request, self.project
-                )
-            ],
-        )
 
     def test_payment_address_inline_form_validates(self):
         request = self.factory.get("/admin/projects/project/add/")
@@ -221,10 +195,6 @@ class ProjectAdminTests(TestCase):
                 "pre_notify": self.project.pre_notify,
                 "fast_confirm_threshold": self.project.fast_confirm_threshold,
                 "hmac_key": self.project.hmac_key,
-                "withdrawal_review_required": self.project.withdrawal_review_required,
-                "withdrawal_review_exempt_limit": (
-                    self.project.withdrawal_review_exempt_limit
-                ),
                 "active": self.project.active,
                 "vault": contract_address,
             },
@@ -257,10 +227,6 @@ class ProjectAdminTests(TestCase):
                 "pre_notify": self.project.pre_notify,
                 "fast_confirm_threshold": self.project.fast_confirm_threshold,
                 "hmac_key": self.project.hmac_key,
-                "withdrawal_review_required": self.project.withdrawal_review_required,
-                "withdrawal_review_exempt_limit": (
-                    self.project.withdrawal_review_exempt_limit
-                ),
                 "active": self.project.active,
                 "vault": contract_address,
             },
@@ -289,7 +255,6 @@ class ProjectAdminTests(TestCase):
                 "pre_notify": self.project.pre_notify,
                 "fast_confirm_threshold": self.project.fast_confirm_threshold,
                 "hmac_key": self.project.hmac_key,
-                "withdrawal_review_required": self.project.withdrawal_review_required,
                 "active": self.project.active,
                 "vault": "0x52908400098527886E0F7030069857D2E4169EE7",
             },
@@ -316,7 +281,6 @@ class ProjectAdminTests(TestCase):
                 "pre_notify": self.project.pre_notify,
                 "fast_confirm_threshold": self.project.fast_confirm_threshold,
                 "hmac_key": self.project.hmac_key,
-                "withdrawal_review_required": self.project.withdrawal_review_required,
                 "active": self.project.active,
                 "vault": "0x52908400098527886E0F7030069857D2E4169EE7",
             },
@@ -343,7 +307,6 @@ class ProjectAdminTests(TestCase):
                 "pre_notify": self.project.pre_notify,
                 "fast_confirm_threshold": self.project.fast_confirm_threshold,
                 "hmac_key": self.project.hmac_key,
-                "withdrawal_review_required": self.project.withdrawal_review_required,
                 "active": self.project.active,
                 "vault": "0x8617E340B3D01FA5F11F306F4090FD50E238070D",
             },

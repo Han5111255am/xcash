@@ -65,8 +65,6 @@ class NoopInternalTransferHandler:
 
 from evm.internal_tx.vault_slot_collect import vault_slot_collect_handler  # noqa: E402
 from evm.internal_tx.vault_slot_collect import vault_slot_collect_matcher  # noqa: E402
-from evm.internal_tx.withdrawal import withdrawal_handler  # noqa: E402
-from evm.internal_tx.withdrawal import withdrawal_matcher  # noqa: E402
 
 noop_internal_transfer_handler = NoopInternalTransferHandler()
 
@@ -77,12 +75,10 @@ NON_TRANSFER_TX_TASK_TYPES: set[TxTaskType] = {
 INTERNAL_TX_HANDLERS: dict[TxTaskType, InternalTransferHandler] = {
     TxTaskType.VaultSlotDeploy: noop_internal_transfer_handler,
     TxTaskType.VaultSlotCollect: vault_slot_collect_handler,
-    TxTaskType.Withdrawal: withdrawal_handler,
 }
 
 INTERNAL_TX_MATCHERS: dict[TxTaskType, ReceiptMatcher] = {
     TxTaskType.VaultSlotCollect: vault_slot_collect_matcher,
-    TxTaskType.Withdrawal: withdrawal_matcher,
 }
 
 

@@ -17,27 +17,17 @@ from internal_api.viewsets.differ_recipient_addresses import (
 )
 from internal_api.viewsets.epay import EpayMerchantView
 from internal_api.viewsets.invoices import InternalInvoiceViewSet
-from internal_api.viewsets.operations import WithdrawalReviewLogViewSet
 from internal_api.viewsets.stats import StatsViewSet
 from internal_api.viewsets.webhooks import DeliveryAttemptViewSet
 from internal_api.viewsets.webhooks import WebhookEventViewSet
-from internal_api.viewsets.withdrawals import InternalWithdrawalViewSet
 
 project_router = SimpleRouter(trailing_slash=False)
 project_router.register("invoices", InternalInvoiceViewSet, basename="internal-invoice")
 project_router.register("deposits", InternalDepositViewSet, basename="internal-deposit")
 project_router.register(
-    "withdrawals", InternalWithdrawalViewSet, basename="internal-withdrawal"
-)
-project_router.register(
     "recipient-addresses",
     DifferRecipientAddressViewSet,
     basename="internal-recipient-address",
-)
-project_router.register(
-    "withdrawal-review-logs",
-    WithdrawalReviewLogViewSet,
-    basename="internal-withdrawal-review-log",
 )
 project_router.register(
     "webhook-events", WebhookEventViewSet, basename="internal-webhook-event"

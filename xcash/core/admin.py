@@ -57,9 +57,6 @@ class SystemSettingsAdmin(ModelAdmin):
             "异常巡检",
             {
                 "fields": (
-                    "reviewing_withdrawal_timeout_minutes",
-                    "pending_withdrawal_timeout_minutes",
-                    "confirming_withdrawal_timeout_minutes",
                     "webhook_event_timeout_minutes",
                 )
             },

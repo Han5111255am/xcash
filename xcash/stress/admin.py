@@ -5,19 +5,17 @@ from django.db import connection
 from django.db import transaction
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
+from stress.models import DepositStressCase
+from stress.models import DepositStressCaseStatus
+from stress.models import InvoiceStressCase
+from stress.models import InvoiceStressCaseStatus
+from stress.models import StressRun
+from stress.models import StressRunStatus
+from stress.service import StressService
+from stress.tasks import prepare_stress
 
 from common.admin import ModelAdmin
 from common.admin import TabularInline
-from .models import DepositStressCase
-from .models import DepositStressCaseStatus
-from .models import InvoiceStressCase
-from .models import InvoiceStressCaseStatus
-from .models import StressRun
-from .models import StressRunStatus
-from .models import WithdrawalStressCase
-from .models import WithdrawalStressCaseStatus
-from .service import StressService
-from .tasks import prepare_stress
 
 
 class InvoiceStressCaseInline(TabularInline):
@@ -35,32 +33,6 @@ class InvoiceStressCaseInline(TabularInline):
         "webhook_nonce_ok",
         "webhook_timestamp_ok",
         "collection_verified",
-        "error",
-    )
-    readonly_fields = fields
-    extra = 0
-    can_delete = False
-    show_change_link = True
-
-    def has_add_permission(self, request, obj=None):
-        return False
-
-
-class WithdrawalStressCaseInline(TabularInline):
-    model = WithdrawalStressCase
-    fields = (
-        "sequence",
-        "status",
-        "crypto",
-        "chain",
-        "withdrawal_sys_no",
-        "to_address",
-        "amount",
-        "tx_hash",
-        "webhook_signature_ok",
-        "webhook_payload_ok",
-        "webhook_nonce_ok",
-        "webhook_timestamp_ok",
         "error",
     )
     readonly_fields = fields
@@ -180,7 +152,6 @@ class StressRunAdmin(ModelAdmin):
     list_display = (
         "name",
         "count",
-        "withdrawal_count",
         "deposit_count",
         "deposit_customer_count",
         "status",
@@ -211,14 +182,12 @@ class StressRunAdmin(ModelAdmin):
             return (
                 "name",
                 "count",
-                "withdrawal_count",
                 "deposit_count",
                 "deposit_customer_count",
             )
         return (
             "name",
             "count",
-            "withdrawal_count",
             "deposit_count",
             "deposit_customer_count",
             "status",
@@ -250,11 +219,6 @@ class StressRunAdmin(ModelAdmin):
             ("collection_wait_ms", "webhook_received_at", "collection_done_at"),
             ("total_ms", "started_at", "finished_at"),
         ]
-        withdrawal_stages = [
-            ("api_ms", "started_at", "api_done_at"),
-            ("webhook_wait_ms", "api_done_at", "webhook_received_at"),
-            ("total_ms", "started_at", "finished_at"),
-        ]
         deposit_stages = [
             ("api_ms", "started_at", "api_done_at"),
             ("chain_pay_ms", "api_done_at", "chain_paid_at"),
@@ -271,15 +235,6 @@ class StressRunAdmin(ModelAdmin):
                     obj.pk,
                     InvoiceStressCaseStatus.SUCCEEDED,
                     invoice_stages,
-                ),
-            ),
-            (
-                _("Withdrawal"),
-                _percentile_metrics(
-                    WithdrawalStressCase._meta.db_table,
-                    obj.pk,
-                    WithdrawalStressCaseStatus.SUCCEEDED,
-                    withdrawal_stages,
                 ),
             ),
             (
@@ -353,36 +308,6 @@ class StressRunAdmin(ModelAdmin):
 
         if started:
             messages.success(request, _("已启动 %(count)d 个测试") % {"count": started})
-
-
-@admin.register(WithdrawalStressCase)
-class WithdrawalStressCaseAdmin(ModelAdmin):
-    list_display = (
-        "stress_run",
-        "sequence",
-        "status",
-        "crypto",
-        "chain",
-        "withdrawal_sys_no",
-        "to_address",
-        "tx_hash",
-        "webhook_received",
-        "webhook_signature_ok",
-        "webhook_payload_ok",
-        "webhook_nonce_ok",
-        "webhook_timestamp_ok",
-    )
-    list_filter = ("stress_run", "status")
-    search_fields = ("withdrawal_sys_no", "withdrawal_out_no", "tx_hash")
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(InvoiceStressCase)

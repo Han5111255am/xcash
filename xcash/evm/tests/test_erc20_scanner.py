@@ -208,7 +208,7 @@ class EvmErc20ScannerTests(TestCase):
         base_task = TxTask.objects.create(
             chain=self.chain,
             sender=self.addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash=tx_hash,
             status=TxTaskStatus.PENDING_CHAIN,
         )

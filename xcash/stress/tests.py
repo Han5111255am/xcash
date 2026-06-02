@@ -30,7 +30,7 @@ from stress.service import _build_deposit_cases
 from stress.service import _build_stress_cases
 from stress.service import _require_stress_methods_ready
 from stress.service import _setup_differ_recipient_addresses
-from stress.service import _setup_wallet_for_withdrawal
+from stress.service import _setup_wallet_for_vault
 from stress.tasks import _do_payment
 from stress.tasks import _execute
 from stress.tasks import _execute_deposit
@@ -225,8 +225,8 @@ class StressServiceTests(SimpleTestCase):
             patch("stress.service._setup_differ_recipient_addresses"),
             # 账单压测会稳定包含 CONTRACT/VaultSlot case，prepare 需要触发钱包与
             # Vault 注资；本单元测试只关心生成的 case，故 mock 掉这些远端依赖。
-            patch("stress.service._setup_wallet_for_withdrawal"),
-            patch("stress.service._fund_vault_for_withdrawal"),
+            patch("stress.service._setup_wallet_for_vault"),
+            patch("stress.service._fund_vault_for_stress"),
             patch(
                 "stress.service.InvoiceStressCase.objects.bulk_create", bulk_create_mock
             ),
@@ -270,8 +270,8 @@ class StressServiceTests(SimpleTestCase):
                 "stress.service.Project.objects.create", return_value=created_project
             ),
             patch("stress.service._setup_differ_recipient_addresses"),
-            patch("stress.service._setup_wallet_for_withdrawal") as setup_wallet_mock,
-            patch("stress.service._fund_vault_for_withdrawal") as fund_vault_mock,
+            patch("stress.service._setup_wallet_for_vault") as setup_wallet_mock,
+            patch("stress.service._fund_vault_for_stress") as fund_vault_mock,
             patch(
                 "stress.service.InvoiceStressCase.objects.bulk_create"
             ) as bulk_create_mock,
@@ -301,7 +301,7 @@ class StressServiceTests(SimpleTestCase):
         expected_perm = {
             "appid": "XC-STRESS",
             "frozen": False,
-            "enable_deposit_withdrawal": True,
+            "enable_deposit": True,
         }
 
         with (
@@ -311,8 +311,8 @@ class StressServiceTests(SimpleTestCase):
             patch("stress.service._setup_differ_recipient_addresses"),
             # 账单压测会稳定包含 CONTRACT/VaultSlot case，prepare 需要触发钱包与
             # Vault 注资；本测试只关心 SaaS 权限缓存预置，故 mock 掉这些远端依赖。
-            patch("stress.service._setup_wallet_for_withdrawal"),
-            patch("stress.service._fund_vault_for_withdrawal"),
+            patch("stress.service._setup_wallet_for_vault"),
+            patch("stress.service._fund_vault_for_stress"),
             patch("stress.service.cache", create=True) as cache_mock,
             patch("stress.service.InvoiceStressCase.objects.bulk_create"),
             patch("stress.service.random.random", return_value=0.9),
@@ -1487,7 +1487,7 @@ class StressContractProvisioningTests(TestCase):
     """压测合约账单 provisioning 的真实路径验证（不 mock available_methods / select_method）。
 
     覆盖 vault 修复与链命名收敛后、stress 合约单的建单前置与收款分配：
-    - _setup_wallet_for_withdrawal 把项目 EVM 热钱包地址写入 project.vault；
+    - _setup_wallet_for_vault 把项目 EVM 热钱包地址写入 project.vault；
     - _require_stress_methods_ready 按 CONTRACT 校验：缺 vault 时即便配了差额收款地址也要报错；
     - 合约 Invoice.select_method 在 vault 就绪时真实分配 VaultSlot 收款地址，缺 vault 时分配失败。
 
@@ -1538,7 +1538,7 @@ class StressContractProvisioningTests(TestCase):
             billing_mode=InvoiceBillingMode.CONTRACT,
         )
 
-    def test_setup_wallet_for_withdrawal_assigns_evm_hot_address_as_vault(self):
+    def test_setup_wallet_for_vault_assigns_evm_hot_address_as_vault(self):
         # vault 必须写成项目 EVM 热钱包地址，且与 _fund_evm_vault 注资的派生地址同址
         # （二者用完全相同的 get_address(EVM, HotWallet) 参数）。
         hot_address = "0x1000000000000000000000000000000000000001"
@@ -1556,7 +1556,7 @@ class StressContractProvisioningTests(TestCase):
         self.assertIsNone(project.vault)
 
         with patch("chains.signer.get_signer_backend", return_value=_StubSigner()):
-            _setup_wallet_for_withdrawal(project)
+            _setup_wallet_for_vault(project)
             funded_address = project.wallet.get_address(
                 chain_type=ChainType.EVM, usage=AddressUsage.HotWallet
             ).address

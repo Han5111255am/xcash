@@ -31,12 +31,6 @@ class AppidThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": f"{appid}:{ident}"}
 
 
-class WithdrawalCreateThrottle(AppidThrottle):
-    """提币创建接口的频率限制，防止批量发起提币耗尽资金。"""
-
-    scope = "withdrawal_create"
-
-
 class VaultSlotThrottle(AppidThrottle):
     """VaultSlot 地址获取接口的频率限制，防止批量占用槽位。"""
 

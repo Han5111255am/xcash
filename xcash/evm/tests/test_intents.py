@@ -30,7 +30,7 @@ def simple_intent():
         value=0,
         data="",
         gas=21000,
-        tx_type=TxTaskType.Withdrawal,
+        tx_type=TxTaskType.VaultSlotCollect,
     )
 
 
@@ -118,7 +118,7 @@ def test_build_native_transfer_intent_sets_basic_fields():
         chain=chain,
         to=recipient,
         value=value,
-        tx_type=TxTaskType.Withdrawal,
+        tx_type=TxTaskType.VaultSlotCollect,
     )
 
     assert intent.tx_kind == TxKind.NATIVE_TRANSFER
@@ -135,7 +135,7 @@ def test_build_native_transfer_intent_rejects_negative_value():
             chain=_fake_chain(),
             to="0x1111111111111111111111111111111111111111",
             value=-1,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )
 
 
@@ -152,7 +152,7 @@ def test_build_erc20_transfer_intent_sets_basic_fields():
         crypto=crypto,
         to=recipient,
         value_raw=value_raw,
-        tx_type=TxTaskType.Withdrawal,
+        tx_type=TxTaskType.VaultSlotCollect,
     )
 
     assert intent.tx_kind == TxKind.CONTRACT_CALL
@@ -180,7 +180,7 @@ def test_build_erc20_transfer_intent_rejects_negative_value_raw():
             crypto=crypto,
             to="0x3333333333333333333333333333333333333333",
             value_raw=-1,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )
 
 
@@ -195,7 +195,7 @@ def test_build_erc20_transfer_intent_rejects_crypto_not_deployed_on_chain():
             crypto=crypto,
             to="0x3333333333333333333333333333333333333333",
             value_raw=1,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )
 
 
@@ -208,7 +208,7 @@ def test_build_contract_call_intent_sets_basic_fields():
         contract_address=contract_address,
         data="A9059CBB",
         gas=50000,
-        tx_type=TxTaskType.Withdrawal,
+        tx_type=TxTaskType.VaultSlotCollect,
         value=7,
     )
 
@@ -226,7 +226,7 @@ def test_build_contract_call_intent_defaults_value_to_zero():
         contract_address="0x2222222222222222222222222222222222222222",
         data="0x",
         gas=50000,
-        tx_type=TxTaskType.Withdrawal,
+        tx_type=TxTaskType.VaultSlotCollect,
     )
 
     assert intent.value == 0
@@ -240,7 +240,7 @@ def test_build_contract_call_intent_rejects_non_positive_gas():
             contract_address="0x2222222222222222222222222222222222222222",
             data="0x",
             gas=0,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )
 
 
@@ -252,7 +252,7 @@ def test_build_contract_call_intent_rejects_negative_value():
             contract_address="0x2222222222222222222222222222222222222222",
             data="0x",
             gas=50000,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             value=-1,
         )
 
@@ -265,5 +265,5 @@ def test_build_contract_call_intent_rejects_non_hex_data():
             contract_address="0x2222222222222222222222222222222222222222",
             data="zzzz",
             gas=50000,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )

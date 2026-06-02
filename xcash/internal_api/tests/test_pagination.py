@@ -15,7 +15,6 @@ from internal_api.viewsets.deposits import InternalDepositViewSet
 from internal_api.viewsets.differ_recipient_addresses import (
     DifferRecipientAddressViewSet,
 )
-from internal_api.viewsets.withdrawals import InternalWithdrawalViewSet
 
 from chains.models import Wallet
 from common.pagination import PageNumberSizePagination
@@ -147,7 +146,6 @@ class TestListViewSetsHaveStableOrdering:
         "viewset_cls",
         [
             InternalDepositViewSet,
-            InternalWithdrawalViewSet,
             DifferRecipientAddressViewSet,
         ],
     )

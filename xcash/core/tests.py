@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-from decimal import Decimal
 from os import environ
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,21 +14,11 @@ from django.core.management import call_command
 from django.test import SimpleTestCase
 from django.test import TestCase
 from django.test import override_settings
-from django.utils import timezone
 from web3 import Web3
 
-from chains.constants import ChainCode
 from chains.constants import ChainType
-from chains.models import AddressUsage
 from chains.models import Chain
-from chains.models import Transfer
-from chains.models import TransferStatus
-from chains.models import TransferType
-from chains.models import TxTask
-from chains.models import TxTaskStatus
-from chains.models import TxTaskType
 from chains.models import Wallet
-from chains.tasks import confirm_transfer
 from chains.test_signer import build_test_remote_signer_backend
 from core.default_data import ensure_base_currencies
 from core.default_data import ensure_local_chains
@@ -45,9 +34,6 @@ from currencies.models import ChainToken
 from evm.local_erc20 import LOCAL_EVM_ERC20_ABI
 from evm.local_erc20 import LOCAL_EVM_ERC20_BYTECODE
 from evm.scanner.constants import ERC20_TRANSFER_TOPIC0
-from projects.models import Project
-from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalReviewStatus
 
 _CORE_TEST_PATCHERS = []
 
@@ -396,86 +382,3 @@ class LocalEvmContractCompatibilityTests(LocalChainIntegrationMixin, TestCase):
             Web3.to_hex(receipt["logs"][0]["topics"][0]),
             ERC20_TRANSFER_TOPIC0,
         )
-
-
-class LocalEvmScannerIntegrationTests(LocalChainIntegrationMixin, TestCase):
-
-
-
-
-
-
-
-
-
-
-    def test_local_evm_missing_tx_is_dropped_and_reverts_withdrawal(self):
-        # 节点查不到 hash 时，Transfer 被 drop，提币回退到 PENDING 等待重新匹配。
-        self._require_anvil()
-        chain = Chain.objects.create(
-            code=ChainCode.Anvil,
-            rpc=self.EVM_RPC,
-            active=True,
-        )
-        crypto = chain.native_coin
-        wallet = Wallet.generate()
-        project = Project.objects.create(
-            name="Local EVM Missing Tx Project",
-            wallet=wallet,
-        )
-        addr = wallet.get_address(
-            chain_type=ChainType.EVM,
-            usage=AddressUsage.HotWallet,
-        )
-        recipient = Web3.to_checksum_address(
-            "0x0000000000000000000000000000000000000009"
-        )
-        tx_task = TxTask.objects.create(
-            chain=chain,
-            sender=addr,
-            tx_type=TxTaskType.Withdrawal,
-            tx_hash="0x" + "9" * 64,
-            status=TxTaskStatus.PENDING_CONFIRM,
-        )
-        transfer = Transfer.objects.create(
-            chain=chain,
-            block=1,
-            block_hash="0x" + "aa" * 32,
-            hash=tx_task.tx_hash,
-            crypto=crypto,
-            from_address=addr.address,
-            to_address=recipient,
-            value=Decimal("1"),
-            amount=Decimal("0.01"),
-            timestamp=1,
-            datetime=timezone.now(),
-            status=TransferStatus.CONFIRMING,
-            type=TransferType.Withdrawal,
-            processed_at=timezone.now(),
-        )
-        withdrawal = Withdrawal.objects.create(
-            project=project,
-            out_no="local-missing-tx-order",
-            chain=chain,
-            crypto=crypto,
-            amount=Decimal("0.01"),
-            to=recipient,
-            tx_task=tx_task,
-            transfer=transfer,
-        )
-
-        old_retries = confirm_transfer.request.retries
-        confirm_transfer.request.retries = confirm_transfer.max_retries
-        try:
-            with self.captureOnCommitCallbacks(execute=True):
-                confirm_transfer.run(transfer.pk)
-        finally:
-            confirm_transfer.request.retries = old_retries
-
-        # Transfer 被 drop 后直接删除，释放唯一约束以允许 reorg 后重建
-        self.assertFalse(Transfer.objects.filter(pk=transfer.pk).exists())
-        withdrawal.refresh_from_db()
-        tx_task.refresh_from_db()
-        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
-        self.assertIsNone(withdrawal.transfer_id)
-        self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CHAIN)

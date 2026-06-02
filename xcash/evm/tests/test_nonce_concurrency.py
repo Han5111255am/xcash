@@ -68,7 +68,7 @@ class EvmNonceConcurrencyTests(TransactionTestCase):
                         chain=self.chain,
                         to=recipient,
                         value=thread_idx + 1,
-                        tx_type=TxTaskType.Withdrawal,
+                        tx_type=TxTaskType.VaultSlotCollect,
                     )
                 )
                 results.append(task.nonce)
@@ -146,7 +146,7 @@ class EvmNonceConcurrencyTests(TransactionTestCase):
                         chain=self.chain,
                         to=recipient,
                         value=1,
-                        tx_type=TxTaskType.Withdrawal,
+                        tx_type=TxTaskType.VaultSlotCollect,
                     )
                 )
                 results.append((str(addr.address), task.nonce))
@@ -195,7 +195,7 @@ class EvmNonceConcurrencyTests(TransactionTestCase):
                         chain=self.chain,
                         to=recipient,
                         value=1,
-                        tx_type=TxTaskType.Withdrawal,
+                        tx_type=TxTaskType.VaultSlotCollect,
                     )
                 )
                 with lock:

@@ -7,7 +7,6 @@ from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
 from .base import REST_FRAMEWORK as BASE_REST_FRAMEWORK
 from .base import UNFOLD
-from .base import WITHDRAWAL_ENABLED
 from .base import env
 
 # GENERAL
@@ -105,7 +104,6 @@ WEBHOOK_ALLOW_INTERNAL_TARGETS = True
 # 仅开发环境放宽匿名限流，生产仍继续使用 base.py 中的保守默认值。
 REST_FRAMEWORK = deepcopy(BASE_REST_FRAMEWORK)
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["anon"] = "10000/minute"
-REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["withdrawal_create"] = "10000/minute"
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["vault_slot"] = "10000/minute"
 
 # Stress app 侧边栏注入
@@ -130,15 +128,6 @@ STRESS_SIDEBAR_ITEMS = [
         "link": reverse_lazy("admin:stress_depositstresscase_changelist"),
     },
 ]
-if WITHDRAWAL_ENABLED:
-    STRESS_SIDEBAR_ITEMS.insert(
-        2,
-        {
-            "title": _("提币测试"),
-            "icon": "upload",
-            "link": reverse_lazy("admin:stress_withdrawalstresscase_changelist"),
-        },
-    )
 
 UNFOLD["SIDEBAR"]["navigation"].insert(
     -1,

@@ -21,8 +21,6 @@ from .models import DepositStressCase
 from .models import DepositStressCaseStatus
 from .models import InvoiceStressCase
 from .models import InvoiceStressCaseStatus
-from .models import WithdrawalStressCase
-from .models import WithdrawalStressCaseStatus
 from .service import StressService
 
 logger = structlog.get_logger()
@@ -71,7 +69,7 @@ def _parse_request(request):
         return None
 
     data = payload.get("data", {})
-    # stress case 对 deposit 仍以 hash 标识；其他类型以 sys_no 标识
+    # stress case 对 deposit 仍以 hash 标识；invoice 以 sys_no 标识。
     event_type = payload.get("type", "")
     if event_type == "deposit":
         if not data.get("hash"):
@@ -205,16 +203,6 @@ def _handle_webhook(request):
 
     # 按 payload 顶层字段区分业务类型
     event_type = payload.get("type", "")
-    if event_type == "withdrawal":
-        _handle_withdrawal_webhook(
-            nonce=nonce,
-            timestamp_str=timestamp_str,
-            signature=signature,
-            body_str=body_str,
-            payload=payload,
-        )
-        return
-
     if event_type == "deposit":
         _handle_deposit_webhook(
             nonce=nonce,
@@ -290,152 +278,6 @@ def _handle_invoice_webhook(*, nonce, timestamp_str, signature, body_str, payloa
         all_ok=result.all_ok,
         errors=result.errors or None,
     )
-
-
-def _handle_withdrawal_webhook(*, nonce, timestamp_str, signature, body_str, payload):
-    """处理 Withdrawal 类型的 Webhook 回调。"""
-    data = payload.get("data", {})
-    sys_no = data.get("sys_no", "")
-    # 只处理终态 webhook
-    if not data.get("confirmed"):
-        logger.info(
-            "stress.withdrawal_webhook.skipped_non_final",
-            sys_no=sys_no,
-            confirmed=data.get("confirmed"),
-        )
-        return
-
-    try:
-        case = WithdrawalStressCase.objects.select_related("stress_run__project").get(
-            withdrawal_sys_no=sys_no
-        )
-    except WithdrawalStressCase.DoesNotExist:
-        logger.warning("stress.withdrawal_webhook.no_matching_case", sys_no=sys_no)
-        return
-
-    if case.status != WithdrawalStressCaseStatus.CONFIRMING:
-        logger.info(
-            "stress.withdrawal_webhook.skipped",
-            sys_no=sys_no,
-            status=case.status,
-        )
-        return
-
-    result = _verify_withdrawal_webhook(
-        nonce=nonce,
-        timestamp_str=timestamp_str,
-        signature=signature,
-        body_str=body_str,
-        data=data,
-        case=case,
-    )
-
-    updated = _update_withdrawal_case(case, nonce, result)
-    if updated is None:
-        return
-
-    StressService.on_case_finished(updated)
-
-    logger.info(
-        "stress.withdrawal_webhook.processed",
-        sys_no=sys_no,
-        all_ok=result.all_ok,
-        errors=result.errors or None,
-    )
-
-
-def _verify_withdrawal_webhook(
-    *, nonce, timestamp_str, signature, body_str, data, case: WithdrawalStressCase
-) -> _VerifyResult:
-    """执行四项提币 webhook 验证。"""
-    project = case.stress_run.project
-    errors = []
-
-    # 1. 签名验证
-    message = f"{nonce}{timestamp_str}{body_str}"
-    expected_sig = hmac_mod.new(
-        project.hmac_key.encode(), message.encode(), hashlib.sha256
-    ).hexdigest()
-    sig_ok = hmac_mod.compare_digest(signature, expected_sig)
-    if not sig_ok:
-        errors.append("签名验证失败")
-
-    # 2. Payload 匹配
-    payload_ok = (
-        data.get("sys_no") == case.withdrawal_sys_no
-        and data.get("out_no") == case.withdrawal_out_no
-    )
-    if not payload_ok:
-        errors.append(
-            f"Payload 不匹配: sys_no={data.get('sys_no')}, out_no={data.get('out_no')}"
-        )
-
-    # 3. Nonce 唯一性
-    nonce_ok = nonce not in case.webhook_received_nonces
-    if not nonce_ok:
-        errors.append(f"Nonce 重复: {nonce}")
-
-    # 4. Timestamp 合理性
-    try:
-        ts = int(timestamp_str)
-        now_ts = int(time.time())
-        ts_ok = abs(now_ts - ts) <= _TIMESTAMP_TOLERANCE
-    except (ValueError, TypeError):
-        ts_ok = False
-    if not ts_ok:
-        errors.append(f"时间戳不合理: {timestamp_str}")
-
-    return _VerifyResult(
-        sig_ok=sig_ok,
-        payload_ok=payload_ok,
-        nonce_ok=nonce_ok,
-        ts_ok=ts_ok,
-        errors=errors,
-    )
-
-
-def _update_withdrawal_case(case, nonce, result: _VerifyResult):
-    """原子更新 WithdrawalStressCase 状态。"""
-    with transaction.atomic():
-        case = WithdrawalStressCase.objects.select_for_update().get(pk=case.pk)
-
-        if case.status != WithdrawalStressCaseStatus.CONFIRMING:
-            return None
-
-        case.webhook_received = True
-        case.webhook_signature_ok = result.sig_ok
-        case.webhook_payload_ok = result.payload_ok
-        case.webhook_nonce_ok = result.nonce_ok
-        case.webhook_timestamp_ok = result.ts_ok
-
-        if nonce and nonce not in case.webhook_received_nonces:
-            case.webhook_received_nonces = [*case.webhook_received_nonces, nonce]
-
-        if result.all_ok:
-            case.status = WithdrawalStressCaseStatus.SUCCEEDED
-        else:
-            case.status = WithdrawalStressCaseStatus.FAILED
-            case.error = "; ".join(result.errors)
-        now = timezone.now()
-        case.webhook_received_at = now
-        case.finished_at = now
-
-        case.save(
-            update_fields=[
-                "webhook_received",
-                "webhook_signature_ok",
-                "webhook_payload_ok",
-                "webhook_nonce_ok",
-                "webhook_timestamp_ok",
-                "webhook_received_nonces",
-                "status",
-                "error",
-                "webhook_received_at",
-                "finished_at",
-            ]
-        )
-
-    return case
 
 
 # ── 充币 Webhook ─────────────────────────────────────────────

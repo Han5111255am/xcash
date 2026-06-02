@@ -1,7 +1,6 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
@@ -33,7 +32,7 @@ class Project(models.Model):
         "chains.Wallet",
         on_delete=models.CASCADE,
         verbose_name=_("项目热钱包"),
-        help_text=_("用于项目提币、归集等项目资产流转交易。"),
+        help_text=_("用于项目归集等项目资产流转交易。"),
     )
     ip_white_list = models.TextField(
         _("IP白名单"),
@@ -82,40 +81,6 @@ class Project(models.Model):
             "一旦设置不可修改。"
         ),
         unique=True,
-    )
-
-    withdrawal_review_required = models.BooleanField(
-        _("提币需审核"),
-        default=True,
-        help_text=_(
-            "开启后，新提币请求会先进入审核中，需后台批准后才会进入链上发送队列"
-        ),
-    )
-    withdrawal_review_exempt_limit = models.DecimalField(
-        _("免审核门槛(USD)"),
-        max_digits=16,
-        decimal_places=2,
-        default=Decimal("0"),
-        validators=[MinValueValidator(Decimal("0"))],
-        help_text=_(
-            "仅在开启提币审核时生效；0 表示全部需要审核；大于 0 时低于该金额的提币可直接进入链上发送队列"
-        ),
-    )
-    withdrawal_single_limit = models.DecimalField(
-        _("单笔提币限额(USD)"),
-        max_digits=16,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        help_text=_("留空表示不限额；超出时直接拒绝创建提币请求"),
-    )
-    withdrawal_daily_limit = models.DecimalField(
-        _("日提币限额(USD)"),
-        max_digits=16,
-        decimal_places=2,
-        null=True,
-        blank=True,
-        help_text=_("留空表示不限额；当天已创建的提币请求也会占用额度"),
     )
 
     active = models.BooleanField(verbose_name=_("启用"), default=True)

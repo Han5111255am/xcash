@@ -36,7 +36,7 @@ class SystemSettings(models.Model):
         default=900,
         validators=[MinValueValidator(60)],
         help_text=_(
-            "超过该时间后，提币审批、Signer 运营等高风险动作需要重新验证两步验证码。"
+            "超过该时间后，Signer 运营等高风险动作需要重新验证两步验证码。"
         ),
     )
     alerts_repeat_interval_minutes = models.PositiveIntegerField(
@@ -62,24 +62,6 @@ class SystemSettings(models.Model):
         default=120,
         validators=[MinValueValidator(1)],
         help_text=_("Webhook 自动重试的指数退避上限秒数。"),
-    )
-    reviewing_withdrawal_timeout_minutes = models.PositiveIntegerField(
-        _("审核中提币超时(分钟)"),
-        default=30,
-        validators=[MinValueValidator(1)],
-        help_text=_("审核中提币超过该时间仍未处理时，进入异常巡检。"),
-    )
-    pending_withdrawal_timeout_minutes = models.PositiveIntegerField(
-        _("待提币超时(分钟)"),
-        default=15,
-        validators=[MinValueValidator(1)],
-        help_text=_("已批准但仍未进入链上确认流程的提币，超过该时间后进入异常巡检。"),
-    )
-    confirming_withdrawal_timeout_minutes = models.PositiveIntegerField(
-        _("确认中提币超时(分钟)"),
-        default=30,
-        validators=[MinValueValidator(1)],
-        help_text=_("链上确认中提币超过该时间仍未完成时，进入异常巡检。"),
     )
     webhook_event_timeout_minutes = models.PositiveIntegerField(
         _("Webhook 堆积超时(分钟)"),

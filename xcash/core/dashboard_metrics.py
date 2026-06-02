@@ -14,7 +14,6 @@ from django.db.models.functions import Coalesce
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
-from chains.models import TxTaskStatus
 from chains.signer import SignerServiceError
 from chains.signer import get_signer_backend
 from core.monitoring import OperationalRiskService
@@ -22,8 +21,6 @@ from invoices.models import Invoice
 from invoices.models import InvoiceStatus
 from webhooks.models import DeliveryAttempt
 from webhooks.models import WebhookEvent
-from withdrawals.models import Withdrawal
-from withdrawals.models import WithdrawalReviewStatus
 
 ZERO_DECIMAL = Value(
     Decimal("0"),
@@ -77,7 +74,6 @@ def build_dashboard_metrics() -> dict:
     last_24h = now - timedelta(hours=24)
 
     invoice_queryset = Invoice.objects.all()
-    withdrawal_queryset = Withdrawal.objects.all()
     delivery_attempt_queryset = DeliveryAttempt.objects.all()
     event_queryset = WebhookEvent.objects.all()
 
@@ -117,39 +113,6 @@ def build_dashboard_metrics() -> dict:
         status=InvoiceStatus.WAITING,
         expires_at__gte=now,
         expires_at__lte=now + timedelta(minutes=30),
-    ).count()
-
-    withdrawal_30d = withdrawal_queryset.filter(created_at__gte=last_30d_start)
-    withdrawal_metrics = withdrawal_queryset.aggregate(
-        reviewing_count=Count(
-            "id", filter=Q(review_status=WithdrawalReviewStatus.REVIEWING)
-        ),
-        pending_count=Count(
-            "id",
-            filter=Q(
-                review_status=WithdrawalReviewStatus.APPROVED,
-                tx_task__status__in=(TxTaskStatus.QUEUED, TxTaskStatus.PENDING_CHAIN),
-            ),
-        ),
-        confirming_count=Count(
-            "id",
-            filter=Q(
-                review_status=WithdrawalReviewStatus.APPROVED,
-                tx_task__status=TxTaskStatus.PENDING_CONFIRM,
-            ),
-        ),
-    )
-    withdrawal_30d_completed = withdrawal_30d.filter(
-        tx_task__status=TxTaskStatus.CONFIRMED
-    ).aggregate(
-        count=Count("id"),
-        worth=Coalesce(Sum("worth"), ZERO_DECIMAL),
-    )
-    withdrawal_30d_rejected = withdrawal_30d.filter(
-        review_status=WithdrawalReviewStatus.REJECTED
-    ).count()
-    withdrawal_30d_failed = withdrawal_30d.filter(
-        tx_task__status=TxTaskStatus.FAILED
     ).count()
 
     delivery_7d = delivery_attempt_queryset.filter(created_at__gte=last_7d_start)
@@ -253,25 +216,9 @@ def build_dashboard_metrics() -> dict:
                 active_invoice_metrics["confirming_worth"] or 0
             ),
             "expiring_soon_count": expiring_soon_count,
-            "reviewing_withdrawal_count": int(
-                withdrawal_metrics["reviewing_count"] or 0
-            ),
-            "pending_withdrawal_count": int(withdrawal_metrics["pending_count"] or 0),
-            "confirming_withdrawal_count": int(
-                withdrawal_metrics["confirming_count"] or 0
-            ),
-            "stalled_withdrawal_count": operational_risk["stalled_withdrawal_count"],
             "stalled_webhook_event_count": operational_risk[
                 "stalled_webhook_event_count"
             ],
-            "completed_withdrawal_count_30d": int(
-                withdrawal_30d_completed["count"] or 0
-            ),
-            "completed_withdrawal_worth_30d": Decimal(
-                withdrawal_30d_completed["worth"] or 0
-            ),
-            "rejected_withdrawal_count_30d": withdrawal_30d_rejected,
-            "failed_withdrawal_count_30d": withdrawal_30d_failed,
             "webhook_attempt_total_7d": int(delivery_metrics["total"] or 0),
             "webhook_attempt_ok_7d": int(delivery_metrics["ok"] or 0),
             "webhook_attempt_failed_7d": int(delivery_metrics["total"] or 0)
@@ -288,7 +235,6 @@ def build_dashboard_metrics() -> dict:
         "payment_methods": payment_methods,
         "recent_failed_attempts": recent_failed_attempts,
         "recent_stalled_invoices": recent_stalled_invoices,
-        "recent_stalled_withdrawals": operational_risk["recent_stalled_withdrawals"],
         "recent_stalled_webhook_events": operational_risk[
             "recent_stalled_webhook_events"
         ],

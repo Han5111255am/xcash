@@ -150,25 +150,6 @@ SIDEBAR_UNFOLD = {
                 ],
             },
             {
-                "title": _("提币"),
-                "feature": "withdrawal",
-                "collapsible": False,
-                "items": [
-                    {
-                        "title": _("提币列表"),
-                        "icon": "upload",
-                        "link": reverse_lazy("admin:withdrawals_withdrawal_changelist"),
-                    },
-                    {
-                        "title": _("审核日志"),
-                        "icon": "fact_check",
-                        "link": reverse_lazy(
-                            "admin:withdrawals_withdrawalreviewlog_changelist"
-                        ),
-                    },
-                ],
-            },
-            {
                 "title": _("通知"),
                 "collapsible": False,
                 "items": [

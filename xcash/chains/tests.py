@@ -17,7 +17,6 @@ from django.test import override_settings
 from django.utils import timezone
 from web3 import Web3
 
-from chains.capabilities import ChainProductCapabilityService
 from chains.constants import ChainCode
 from chains.constants import ChainType
 from chains.models import Address
@@ -33,14 +32,11 @@ from chains.models import TxTask
 from chains.models import TxTaskStatus
 from chains.models import TxTaskType
 from chains.models import Wallet
-from chains.service import ObservedTransferPayload
-from chains.service import TransferService
 from chains.signer import RemoteSignerBackend
 from chains.signer import SignerAdminSummary
 from chains.signer import SignerServiceError
 from chains.signer import build_signer_signature_payload
 from chains.signer import get_signer_backend
-from chains.tasks import block_number_updated
 from chains.tasks import process_transfer
 from chains.transfer_matching import addresses_equal
 from chains.transfer_matching import raw_amount
@@ -50,21 +46,6 @@ from currencies.models import Crypto
 from evm.choices import TxKind
 from evm.constants import DEFAULT_BASE_TRANSFER_GAS
 from evm.constants import DEFAULT_ERC20_TRANSFER_GAS
-from withdrawals.models import WithdrawalReviewStatus
-
-
-class ChainProductCapabilityFeatureFlagTests(SimpleTestCase):
-    @override_settings(WITHDRAWAL_ENABLED=False)
-    def test_supports_withdrawal_returns_false_when_deployment_disabled(self):
-        crypto = Mock()
-
-        supported = ChainProductCapabilityService.supports_withdrawal(
-            chain=Mock(type=ChainType.EVM),
-            crypto=crypto,
-        )
-
-        self.assertFalse(supported)
-        crypto.support_this_chain.assert_not_called()
 
 
 class TransferMatchingTests(TestCase):
@@ -117,7 +98,7 @@ class TransferMatchingTests(TestCase):
             timestamp=1,
             datetime=timezone.now(),
             status=TransferStatus.CONFIRMED,
-            type=TransferType.Withdrawal,
+            type=TransferType.Collect,
         )
 
         expected_value = raw_amount(
@@ -138,9 +119,9 @@ class TransferMatchingTests(TestCase):
         )
 
     def test_raw_amount_truncates_when_business_amount_exceeds_chain_decimals(self):
-        # 业务 amount 的小数位超过 crypto.decimals 时（如压测用 8 位精度生成 USDT 提币），
+        # 业务 amount 的小数位超过 crypto.decimals 时，
         # 链上 raw value 必然被向下截断；raw_amount 必须与 broadcast 端 `int(...)` 对齐，
-        # 否则 transfer_matches 的严格 == 比对会永久失败，已上链的提币无法被认领。
+        # 否则 transfer_matches 的严格 == 比对会永久失败，已上链的转账无法被认领。
         crypto = Crypto.objects.create(
             name="Raw Amount Trunc",
             symbol="RAT",
@@ -185,7 +166,7 @@ class TransferMatchingTests(TestCase):
             timestamp=1,
             datetime=timezone.now(),
             status=TransferStatus.CONFIRMED,
-            type=TransferType.Withdrawal,
+            type=TransferType.Collect,
         )
 
         self.assertTrue(
@@ -250,7 +231,7 @@ class TxHashModelTests(TestCase):
         self.task = TxTask.objects.create(
             chain=self.chain,
             sender=self.addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "a1" * 32,
             status=TxTaskStatus.QUEUED,
         )
@@ -324,7 +305,7 @@ class TxTaskTxHashHistoryTests(TestCase):
         self.task = TxTask.objects.create(
             chain=self.chain,
             sender=self.addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "e1" * 32,
             status=TxTaskStatus.QUEUED,
         )
@@ -562,395 +543,6 @@ class AddressChainStateAcquireTests(TestCase):
                 address=self.address,
                 chain=self.chain,
             )
-
-
-class TransferConfirmDispatchTests(TestCase):
-    def setUp(self):
-        self.wallet = Wallet.objects.create()
-        self.crypto = Crypto.objects.create(
-            name="Ethereum Confirm Dispatch",
-            symbol="ETHCD",
-            coingecko_id="ethereum-confirm-dispatch",
-        )
-        self.chain = Chain.objects.create(
-            code=ChainCode.Ethereum,
-            rpc="",
-            active=True,
-            latest_block_number=100,
-        )
-        self.addr = Address.objects.create(
-            wallet=self.wallet,
-            chain_type=ChainType.EVM,
-            usage=AddressUsage.HotWallet,
-            bip44_account=1,
-            address_index=0,
-            address=Web3.to_checksum_address(
-                "0x00000000000000000000000000000000000000c1"
-            ),
-        )
-
-    def _create_withdrawal_transfer_fixture(self, *, tx_hash: str):
-        from projects.models import Project
-        from withdrawals.models import Withdrawal
-
-        project = Project.objects.create(
-            name=f"project-{tx_hash[-6:]}",
-            wallet=self.wallet,
-            webhook="https://example.com/webhook",
-        )
-        tx_task = TxTask.objects.create(
-            chain=self.chain,
-            sender=self.addr,
-            tx_type=TxTaskType.Withdrawal,
-            tx_hash=tx_hash,
-            status=TxTaskStatus.PENDING_CONFIRM,
-        )
-        withdrawal = Withdrawal.objects.create(
-            project=project,
-            chain=self.chain,
-            crypto=self.crypto,
-            amount="1",
-            worth="1",
-            out_no=f"out-{tx_hash[-6:]}",
-            to=Web3.to_checksum_address("0x00000000000000000000000000000000000000c3"),
-            tx_task=tx_task,
-        )
-        transfer = Transfer.objects.create(
-            chain=self.chain,
-            block=100,
-            block_hash="0x" + "aa" * 32,
-            hash=tx_hash,
-            crypto=self.crypto,
-            from_address=self.addr.address,
-            to_address=withdrawal.to,
-            value="1",
-            amount="1",
-            timestamp=1,
-            datetime=timezone.now(),
-            status=TransferStatus.CONFIRMING,
-            type=TransferType.Withdrawal,
-        )
-        withdrawal.transfer = transfer
-        withdrawal.save(update_fields=["transfer", "updated_at"])
-        return transfer, withdrawal, tx_task
-
-    @patch("chains.tasks.confirm_transfer.delay")
-    def test_block_number_updated_dispatches_quick_transfer_without_waiting_depth(
-        self,
-        confirm_transfer_delay_mock,
-    ):
-        # QUICK 模式只要已进入 confirming 且完成业务归类，就应立即进入确认任务，不等区块深度。
-        from chains.tasks import block_number_updated
-
-        transfer = Transfer.objects.create(
-            chain=self.chain,
-            block=100,
-            block_hash="0x" + "aa" * 32,
-            hash="0x" + "7" * 64,
-            crypto=self.crypto,
-            from_address=self.addr.address,
-            to_address=Web3.to_checksum_address(
-                "0x00000000000000000000000000000000000000c2"
-            ),
-            value="1",
-            amount="1",
-            timestamp=1,
-            datetime=timezone.now(),
-            status=TransferStatus.CONFIRMING,
-            confirm_mode=ConfirmMode.QUICK,
-            type=TransferType.Withdrawal,
-            processed_at=timezone.now(),
-        )
-
-        block_number_updated.run(self.chain.pk)
-
-        confirm_transfer_delay_mock.assert_called_once_with(transfer.pk)
-
-    @patch("chains.tasks.confirm_transfer.delay")
-    def test_reorg_observed_transfer_replaces_old_transfer_before_full_confirm_dispatch(
-        self,
-        confirm_transfer_delay_mock,
-    ):
-        # reorg 后同一 tx_hash 可能被重新打包到新块；旧 Transfer 必须被删除，
-        # 当前观测重新落库，避免确认调度沿用旧 block 提前放行。
-        Chain.objects.filter(pk=self.chain.pk).update(
-            latest_block_number=105,
-        )
-        self.chain.refresh_from_db()
-        tx_hash = "0x" + "8" * 64
-        transfer = Transfer.objects.create(
-            chain=self.chain,
-            block=90,
-            block_hash="0x" + "aa" * 32,
-            hash=tx_hash,
-            crypto=self.crypto,
-            from_address=self.addr.address,
-            to_address=Web3.to_checksum_address(
-                "0x00000000000000000000000000000000000000c4"
-            ),
-            value=Decimal("1"),
-            amount=Decimal("1"),
-            timestamp=1,
-            datetime=timezone.now(),
-            status=TransferStatus.CONFIRMING,
-            confirm_mode=ConfirmMode.FULL,
-            processed_at=timezone.now(),
-        )
-        Transfer.objects.filter(pk=transfer.pk).update(
-            created_at=timezone.now() - timedelta(seconds=20)
-        )
-        observed_at = transfer.datetime + timedelta(seconds=15)
-
-        result = TransferService.create_observed_transfer(
-            observed=ObservedTransferPayload(
-                chain=self.chain,
-                block=100,
-                block_hash="0x" + "aa" * 32,
-                tx_hash=tx_hash,
-                from_address=transfer.from_address,
-                to_address=transfer.to_address,
-                crypto=self.crypto,
-                value=Decimal("1"),
-                amount=Decimal("1"),
-                timestamp=2,
-                datetime=observed_at,
-                source="test-reorg",
-            )
-        )
-
-        self.assertTrue(result.created)
-        self.assertFalse(result.conflict)
-        self.assertFalse(Transfer.objects.filter(pk=transfer.pk).exists())
-        self.assertEqual(result.transfer.block, 100)
-        self.assertEqual(result.transfer.timestamp, 2)
-        self.assertEqual(result.transfer.datetime, observed_at)
-
-        block_number_updated.run(self.chain.pk)
-
-        confirm_transfer_delay_mock.assert_not_called()
-
-    @patch("chains.tasks.confirm_transfer.delay")
-    def test_reorg_observed_transfer_replaces_old_transfer_even_when_block_is_lower(
-        self,
-        confirm_transfer_delay_mock,
-    ):
-        # create_observed_transfer 只负责把同 tx_hash 的当前观测作为事实重建；
-        # 业务确认安全由 confirm receipt 路径兜底。
-        Chain.objects.filter(pk=self.chain.pk).update(
-            latest_block_number=105,
-        )
-        self.chain.refresh_from_db()
-        tx_hash = "0x" + "9" * 64
-        observed_at = timezone.now()
-        transfer = Transfer.objects.create(
-            chain=self.chain,
-            block=100,
-            block_hash="0x" + "aa" * 32,
-            hash=tx_hash,
-            crypto=self.crypto,
-            from_address=self.addr.address,
-            to_address=Web3.to_checksum_address(
-                "0x00000000000000000000000000000000000000c5"
-            ),
-            value=Decimal("1"),
-            amount=Decimal("1"),
-            timestamp=2,
-            datetime=observed_at,
-            status=TransferStatus.CONFIRMING,
-            confirm_mode=ConfirmMode.FULL,
-            processed_at=timezone.now(),
-        )
-        Transfer.objects.filter(pk=transfer.pk).update(
-            created_at=timezone.now() - timedelta(seconds=20)
-        )
-
-        result = TransferService.create_observed_transfer(
-            observed=ObservedTransferPayload(
-                chain=self.chain,
-                block=90,
-                block_hash="0x" + "aa" * 32,
-                tx_hash=tx_hash,
-                from_address=transfer.from_address,
-                to_address=transfer.to_address,
-                crypto=self.crypto,
-                value=Decimal("1"),
-                amount=Decimal("1"),
-                timestamp=1,
-                datetime=observed_at - timedelta(seconds=15),
-                source="test-reorg-stale",
-            )
-        )
-
-        self.assertTrue(result.created)
-        self.assertFalse(result.conflict)
-        self.assertFalse(Transfer.objects.filter(pk=transfer.pk).exists())
-        self.assertEqual(result.transfer.block, 90)
-        self.assertEqual(result.transfer.timestamp, 1)
-        self.assertEqual(result.transfer.datetime, observed_at - timedelta(seconds=15))
-
-        block_number_updated.run(self.chain.pk)
-
-        confirm_transfer_delay_mock.assert_not_called()
-
-    @patch("common.decorators.cache.delete", return_value=True)
-    @patch("common.decorators.cache.add", return_value=True)
-    @patch("withdrawals.service.WithdrawalService.notify_status_changed")
-    @patch("chains.tasks.AdapterFactory.get_adapter")
-    def test_confirm_transfer_raises_when_failed_result_appears_on_existing_transfer(
-        self,
-        get_adapter_mock,
-        _notify_mock,
-        _cache_add_mock,
-        _cache_delete_mock,
-    ):
-        from chains.adapters import TxCheckStatus
-        from chains.tasks import confirm_transfer
-
-        transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
-            tx_hash="0x" + "f" * 64
-        )
-        adapter = Mock()
-        adapter.tx_result.return_value = TxCheckStatus.FAILED
-        get_adapter_mock.return_value = adapter
-
-        with self.assertRaisesMessage(
-            RuntimeError, "失败交易不应存在 Transfer 记录"
-        ):
-            confirm_transfer.run(transfer.pk)
-
-        withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
-        self.assertEqual(withdrawal.transfer_id, transfer.pk)
-        tx_task.refresh_from_db()
-        self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
-
-    @patch("common.decorators.cache.delete", return_value=True)
-    @patch("common.decorators.cache.add", return_value=True)
-    @patch("chains.tasks.AdapterFactory.get_adapter")
-    def test_confirm_transfer_refreshes_block_when_receipt_moves_higher(
-        self, get_adapter_mock, _cache_add_mock, _cache_delete_mock
-    ):
-        from chains.adapters import TxCheckResult
-        from chains.adapters import TxCheckStatus
-        from chains.tasks import confirm_transfer
-
-        transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
-            tx_hash="0x" + "b" * 64
-        )
-        adapter = Mock()
-        adapter.tx_result.return_value = TxCheckResult(
-            status=TxCheckStatus.SUCCEEDED,
-            block_number=120,
-            block_hash="0x" + "12" * 32,
-        )
-        get_adapter_mock.return_value = adapter
-
-        confirm_transfer.run(transfer.pk)
-
-        transfer.refresh_from_db()
-        withdrawal.refresh_from_db()
-        tx_task.refresh_from_db()
-        self.assertEqual(transfer.block, 120)
-        self.assertEqual(transfer.block_hash, "0x" + "12" * 32)
-        self.assertEqual(transfer.status, TransferStatus.CONFIRMING)
-        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
-        self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
-
-    @patch("common.decorators.cache.delete", return_value=True)
-    @patch("common.decorators.cache.add", return_value=True)
-    @patch("chains.tasks.AdapterFactory.get_adapter")
-    def test_confirm_transfer_refreshes_block_hash_when_receipt_hash_changes(
-        self, get_adapter_mock, _cache_add_mock, _cache_delete_mock
-    ):
-        from chains.adapters import TxCheckResult
-        from chains.adapters import TxCheckStatus
-        from chains.tasks import confirm_transfer
-
-        transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
-            tx_hash="0x" + "c" * 64
-        )
-        Transfer.objects.filter(pk=transfer.pk).update(
-            block_hash="0x" + "11" * 32
-        )
-        adapter = Mock()
-        adapter.tx_result.return_value = TxCheckResult(
-            status=TxCheckStatus.SUCCEEDED,
-            block_number=transfer.block,
-            block_hash="0x" + "22" * 32,
-        )
-        get_adapter_mock.return_value = adapter
-
-        confirm_transfer.run(transfer.pk)
-
-        transfer.refresh_from_db()
-        withdrawal.refresh_from_db()
-        tx_task.refresh_from_db()
-        self.assertEqual(transfer.block, 100)
-        self.assertEqual(transfer.block_hash, "0x" + "22" * 32)
-        self.assertEqual(transfer.status, TransferStatus.CONFIRMING)
-        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
-        self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
-
-    @patch("common.decorators.cache.delete", return_value=True)
-    @patch("common.decorators.cache.add", return_value=True)
-    @patch("chains.tasks.AdapterFactory.get_adapter")
-    def test_confirm_transfer_retries_missing_result_before_drop(
-        self, get_adapter_mock, _cache_add_mock, _cache_delete_mock
-    ):
-        from chains.adapters import TxCheckStatus
-        from chains.tasks import confirm_transfer
-
-        transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
-            tx_hash="0x" + "d" * 64
-        )
-        adapter = Mock()
-        adapter.tx_result.return_value = TxCheckStatus.MISSING
-        get_adapter_mock.return_value = adapter
-
-        with patch.object(
-            confirm_transfer,
-            "retry",
-            side_effect=RuntimeError("retry scheduled"),
-        ) as retry_mock, self.assertRaisesMessage(RuntimeError, "retry scheduled"):
-            confirm_transfer.run(transfer.pk)
-
-        retry_mock.assert_called_once()
-        self.assertTrue(Transfer.objects.filter(pk=transfer.pk).exists())
-        withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
-        self.assertEqual(withdrawal.transfer_id, transfer.pk)
-        tx_task.refresh_from_db()
-        self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CONFIRM)
-
-    @patch("common.decorators.cache.delete", return_value=True)
-    @patch("common.decorators.cache.add", return_value=True)
-    @patch("chains.tasks.AdapterFactory.get_adapter")
-    def test_confirm_transfer_drops_missing_result_after_retry_limit(
-        self, get_adapter_mock, _cache_add_mock, _cache_delete_mock
-    ):
-        from chains.adapters import TxCheckStatus
-        from chains.tasks import confirm_transfer
-
-        transfer, withdrawal, tx_task = self._create_withdrawal_transfer_fixture(
-            tx_hash="0x" + "c" * 64
-        )
-        adapter = Mock()
-        adapter.tx_result.return_value = TxCheckStatus.MISSING
-        get_adapter_mock.return_value = adapter
-
-        old_retries = confirm_transfer.request.retries
-        confirm_transfer.request.retries = confirm_transfer.max_retries
-        try:
-            confirm_transfer.run(transfer.pk)
-        finally:
-            confirm_transfer.request.retries = old_retries
-
-        self.assertFalse(Transfer.objects.filter(pk=transfer.pk).exists())
-        withdrawal.refresh_from_db()
-        self.assertEqual(withdrawal.review_status, WithdrawalReviewStatus.APPROVED)
-        self.assertIsNone(withdrawal.transfer)
-        tx_task.refresh_from_db()
-        self.assertEqual(tx_task.status, TxTaskStatus.PENDING_CHAIN)
 
 
 class SignerBackendTests(TestCase):
@@ -1536,7 +1128,7 @@ class TxTaskTransitionTests(TestCase):
         self.task = TxTask.objects.create(
             chain=self.chain,
             sender=self.addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "dd" * 32,
             status=TxTaskStatus.PENDING_CONFIRM,
         )
@@ -1803,7 +1395,7 @@ def test_address_send_crypto_schedules_native_transfer_intent():
             chain=chain,
             to="0x0000000000000000000000000000000000121202",
             amount=Decimal("1.5"),
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )
 
     assert result == tx_hash
@@ -1812,7 +1404,7 @@ def test_address_send_crypto_schedules_native_transfer_intent():
     assert intent.sender == address
     assert intent.chain == chain
     assert intent.tx_kind == TxKind.NATIVE_TRANSFER
-    assert intent.tx_type == TxTaskType.Withdrawal
+    assert intent.tx_type == TxTaskType.VaultSlotCollect
     assert intent.value == 1_500_000_000_000_000_000
     assert intent.gas == DEFAULT_BASE_TRANSFER_GAS
 
@@ -1860,7 +1452,7 @@ def test_address_send_crypto_schedules_erc20_transfer_intent():
             chain=chain,
             to=recipient,
             amount=Decimal("2.25"),
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
         )
 
     assert result == tx_hash
@@ -1872,7 +1464,7 @@ def test_address_send_crypto_schedules_erc20_transfer_intent():
     assert intent.to == Web3.to_checksum_address(
         "0x00000000000000000000000000000000001212c0"
     )
-    assert intent.tx_type == TxTaskType.Withdrawal
+    assert intent.tx_type == TxTaskType.VaultSlotCollect
     assert intent.gas == DEFAULT_ERC20_TRANSFER_GAS
 
 

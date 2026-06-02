@@ -4,7 +4,6 @@ from rest_framework.routers import SimpleRouter
 
 from deposits.viewsets import DepositViewSet
 from invoices.viewsets import InvoiceViewSet
-from withdrawals.viewsets import WithdrawalViewSet
 
 router = (
     DefaultRouter(trailing_slash=False)
@@ -14,7 +13,6 @@ router = (
 
 router.register("invoice", InvoiceViewSet)
 router.register("deposit", DepositViewSet, basename="deposit")
-router.register("withdrawal", WithdrawalViewSet)
 
 app_name = "api_v1"
 urlpatterns = [

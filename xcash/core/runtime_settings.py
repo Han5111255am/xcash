@@ -74,29 +74,6 @@ def get_webhook_delivery_max_backoff_seconds() -> int:
     return 120
 
 
-def get_reviewing_withdrawal_timeout() -> timedelta:
-    system_settings = get_system_settings()
-    if system_settings is not None:
-        return timedelta(minutes=system_settings.reviewing_withdrawal_timeout_minutes)
-    return timedelta(minutes=30)
-
-
-def get_pending_withdrawal_timeout() -> timedelta:
-    system_settings = get_system_settings()
-    if system_settings is not None:
-        return timedelta(minutes=system_settings.pending_withdrawal_timeout_minutes)
-    return timedelta(minutes=15)
-
-
-def get_confirming_withdrawal_timeout() -> timedelta:
-    system_settings = get_system_settings()
-    if system_settings is not None:
-        return timedelta(
-            minutes=system_settings.confirming_withdrawal_timeout_minutes
-        )
-    return timedelta(minutes=30)
-
-
 def get_webhook_event_timeout() -> timedelta:
     system_settings = get_system_settings()
     if system_settings is not None:

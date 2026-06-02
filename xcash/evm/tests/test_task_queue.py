@@ -67,7 +67,7 @@ class EvmTaskQueueTests(TestCase):
         base_task = TxTask.objects.create(
             chain=self.chain,
             sender=task_address,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash=tx_hash,
             status=status,
         )
@@ -97,7 +97,7 @@ class EvmTaskQueueTests(TestCase):
             filler_base = TxTask.objects.create(
                 chain=self.chain,
                 sender=address,
-                tx_type=TxTaskType.Withdrawal,
+                tx_type=TxTaskType.VaultSlotCollect,
                 status=TxTaskStatus.CONFIRMED,
             )
             EvmTxTask.objects.create(

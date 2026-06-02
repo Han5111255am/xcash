@@ -28,7 +28,6 @@ from .models import DepositStressCase
 from .models import InvoiceStressCase
 from .models import StressRun
 from .models import StressRunStatus
-from .models import WithdrawalStressCase
 
 logger = structlog.get_logger()
 
@@ -39,10 +38,6 @@ STRESS_FIXED_METHODS = {
     "USDT": ["anvil"],
 }
 STRESS_FIXED_METHOD_CHOICES = (
-    ("USDT", "anvil"),
-)
-STRESS_WITHDRAWAL_METHOD_CHOICES = (
-    ("ETH", "anvil"),
     ("USDT", "anvil"),
 )
 STRESS_SAAS_PERMISSION_CACHE_TTL = 24 * 60 * 60
@@ -65,13 +60,9 @@ class StressService:
                 case.billing_mode == InvoiceBillingMode.CONTRACT for case in cases
             )
 
-            # 提币、充币和合约账单都需要 Wallet + EVM Vault。
-            if (
-                stress.withdrawal_count > 0
-                or stress.deposit_count > 0
-                or has_contract_invoice
-            ):
-                _setup_wallet_for_withdrawal(project)
+            # 充币和合约账单都需要 Wallet + EVM Vault。
+            if stress.deposit_count > 0 or has_contract_invoice:
+                _setup_wallet_for_vault(project)
 
             stress.project = project
             stress.error = ""
@@ -79,10 +70,6 @@ class StressService:
             stress.save(update_fields=["project", "error", "finished_at"])
 
             InvoiceStressCase.objects.bulk_create(cases)
-
-            if stress.withdrawal_count > 0:
-                wd_cases = _build_withdrawal_cases(stress)
-                WithdrawalStressCase.objects.bulk_create(wd_cases)
 
             if stress.deposit_count > 0:
                 dep_cases = _build_deposit_cases(stress)
@@ -92,18 +79,13 @@ class StressService:
             stress.save(update_fields=["status"])
 
         # Vault 注资在事务提交后执行，确保数据库记录已落库
-        if (
-            stress.withdrawal_count > 0
-            or stress.deposit_count > 0
-            or has_contract_invoice
-        ):
-            _fund_vault_for_withdrawal(stress.project)
+        if stress.deposit_count > 0 or has_contract_invoice:
+            _fund_vault_for_stress(stress.project)
 
         logger.info(
             "stress.prepared",
             stress_id=stress.pk,
             count=stress.count,
-            withdrawal_count=stress.withdrawal_count,
             deposit_count=stress.deposit_count,
         )
 
@@ -113,7 +95,6 @@ class StressService:
         from .evm import sync_chain_clock
         from .tasks import execute_deposit_case
         from .tasks import execute_stress_case
-        from .tasks import execute_withdrawal_case
         from .tasks import finalize_stress_timeout
         from .tasks import verify_deposit_collection
 
@@ -129,11 +110,6 @@ class StressService:
         for case in stress.cases.all().only("id", "scheduled_offset"):
             eta = stress.started_at + timedelta(seconds=case.scheduled_offset)
             execute_stress_case.apply_async(args=[case.pk], eta=eta)
-            max_offset = max(max_offset, case.scheduled_offset)
-
-        for case in stress.withdrawal_cases.all().only("id", "scheduled_offset"):
-            eta = stress.started_at + timedelta(seconds=case.scheduled_offset)
-            execute_withdrawal_case.apply_async(args=[case.pk], eta=eta)
             max_offset = max(max_offset, case.scheduled_offset)
 
         for case in stress.deposit_cases.all().only("id", "scheduled_offset"):
@@ -166,7 +142,7 @@ class StressService:
 
     @staticmethod
     def on_case_finished(case) -> None:
-        """InvoiceStressCase 或 WithdrawalStressCase 进入终态后，更新 StressRun 统计并检查是否全部完成。
+        """InvoiceStressCase 或 DepositStressCase 进入终态后，更新 StressRun 统计并检查是否全部完成。
 
         使用 select_for_update 锁定 StressRun 行，在同一事务内完成
         计数递增、终态判定和状态更新，防止并发 worker 竞态。
@@ -185,11 +161,7 @@ class StressService:
 
             update_fields = ["succeeded", "failed", "skipped"]
 
-            total_expected = (
-                stress_run.count
-                + stress_run.withdrawal_count
-                + stress_run.deposit_count
-            )
+            total_expected = stress_run.count + stress_run.deposit_count
             if stress_run.total_finished >= total_expected:
                 stress_run.status = StressRunStatus.COMPLETED
                 stress_run.finished_at = timezone.now()
@@ -307,40 +279,6 @@ class StressService:
             raise RuntimeError(f"获取充值地址 API {resp.status_code}: {detail}")
         return resp.json()["deposit_address"]
 
-    @staticmethod
-    def create_withdrawal(case: WithdrawalStressCase) -> dict:
-        """调用提币 API，使用 HMAC 签名。"""
-        stress_run = case.stress_run
-        project = stress_run.project
-        out_no = f"STRESS-WD-{stress_run.pk}-{case.sequence}"
-
-        body = json.dumps(
-            {
-                "out_no": out_no,
-                "to": case.to_address,
-                "crypto": case.crypto,
-                "chain": case.chain,
-                "amount": str(case.amount.normalize()),
-            }
-        )
-
-        headers = StressService._build_hmac_headers(project, body)
-        base_url = settings.STRESS_WEBHOOK_BASE_URL
-        url = f"{base_url}/v1/withdrawal"
-
-        resp = httpx.post(url, content=body, headers=headers, timeout=30)
-        if resp.status_code >= 400:
-            detail = _extract_error_detail(resp)
-            logger.error(
-                "stress.create_withdrawal.failed",
-                status=resp.status_code,
-                detail=detail,
-                request_body=body,
-            )
-            raise RuntimeError(f"提币 API {resp.status_code}: {detail}")
-        return resp.json()
-
-
 # Anvil 默认助记词派生的账户地址（索引 5，避免与付款账户 0 冲突）
 _ANVIL_RECIPIENT_ADDRESSES = [
     "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",  # index 5
@@ -419,7 +357,6 @@ def _create_stress_project(stress: StressRun) -> Project:
         # 设置极大阈值使所有 Invoice 都走 QUICK 确认模式，
         # 因为 Anvil 本地测试链不会自动产生新区块，FULL 模式无法完成确认。
         fast_confirm_threshold=Decimal("99999999"),
-        withdrawal_review_required=False,
     )
     transaction.on_commit(lambda: _seed_stress_saas_permission_cache(project))
     return project
@@ -430,18 +367,17 @@ def _seed_stress_saas_permission_cache(project: Project) -> None:
     perm = {
         "appid": project.appid,
         "frozen": False,
-        "enable_deposit_withdrawal": True,
+        "enable_deposit": True,
     }
     cache_key = f"saas:permission:{project.appid}"
     cache.set(f"{cache_key}:stale", perm, STRESS_SAAS_PERMISSION_CACHE_TTL)
     cache.set(cache_key, perm, STRESS_SAAS_PERMISSION_CACHE_TTL)
 
 
-def _setup_wallet_for_withdrawal(project: Project) -> None:
+def _setup_wallet_for_vault(project: Project) -> None:
     """为 Stress Project 创建 Wallet、预派生 EVM 热钱包地址，并将其设为合约账单 vault。
 
-    压测的提币、充币、合约账单都依赖项目热钱包的 EVM 地址：
-    - 提币：作为链上发送方；
+    压测的充币、合约账单都依赖项目热钱包的 EVM 地址：
     - 合约账单（CONTRACT）：project.vault 既是 CREATE2 派生 VaultSlot 的不可变归集地址，
       也是 VaultSlot 归集（sweep）的最终终点。
 
@@ -487,71 +423,6 @@ def _build_stress_cases(stress: StressRun) -> list[InvoiceStressCase]:
                 sequence=i,
                 scheduled_offset=offset,
                 billing_mode=_pick_billing_mode(i),
-            )
-        )
-
-    random.shuffle(cases)
-    for idx, case in enumerate(cases, 1):
-        case.sequence = idx
-    return cases
-
-
-def _build_withdrawal_cases(stress: StressRun) -> list[WithdrawalStressCase]:
-    """构建本轮待执行的 WithdrawalStressCase 列表。
-
-    每个 case 预分配 crypto/chain、金额和目标地址，
-    执行时直接调用提币 API。提币仅支持 EVM 链。
-    """
-    from web3 import Web3
-
-    from chains.models import Chain
-    from currencies.models import Crypto
-
-    total_seconds = stress.withdrawal_count / 10.0
-    mu = total_seconds / 2
-    sigma = total_seconds / 6
-
-    amount_ranges = {
-        "ETH": (Decimal("0.0001"), Decimal("0.001")),
-        "USDT": (Decimal("0.01"), Decimal("0.1")),
-    }
-
-    # 提币入口已显式拒绝超过 chain 上 crypto 精度的小数位（避免链上 raw value 截断
-    # 与匹配端 expected 不一致），抽样按各 (crypto, chain) 的真实 decimals 出整数 raw units。
-    # Withdrawal.amount / CreateWithdrawalSerializer.amount 业务字段限制最多 8 位，
-    # 超过的 chain（如 ETH 18 位）也只能下钻到 8 位精度。
-    amount_max_dp = 8
-    decimals_by_method: dict[tuple[str, str], int] = {}
-    for crypto_symbol, chain_code in STRESS_WITHDRAWAL_METHOD_CHOICES:
-        chain = Chain.objects.get(code=chain_code)
-        crypto = Crypto.objects.get(symbol=crypto_symbol)
-        decimals_by_method[(crypto_symbol, chain_code)] = min(
-            crypto.get_decimals(chain), amount_max_dp
-        )
-
-    cases = []
-    for i in range(1, stress.withdrawal_count + 1):
-        offset = max(0.0, min(total_seconds, random.gauss(mu, sigma)))
-        crypto_symbol, chain_code = random.choice(STRESS_WITHDRAWAL_METHOD_CHOICES)  # noqa: S311
-
-        lo, hi = amount_ranges[crypto_symbol]
-        amount = _sample_decimal_amount(
-            lo=lo,
-            hi=hi,
-            decimal_places=decimals_by_method[(crypto_symbol, chain_code)],
-        )
-
-        to_address = Web3().eth.account.create().address
-
-        cases.append(
-            WithdrawalStressCase(
-                stress_run=stress,
-                sequence=i,
-                scheduled_offset=offset,
-                crypto=crypto_symbol,
-                chain=chain_code,
-                to_address=to_address,
-                amount=amount,
             )
         )
 
@@ -678,7 +549,7 @@ def _extract_error_detail(resp: httpx.Response) -> str:
     return " | ".join(parts)[:2000] if parts else text[:2000]
 
 
-def _fund_vault_for_withdrawal(project: Project) -> None:
+def _fund_vault_for_stress(project: Project) -> None:
     """为 Stress Project 的 EVM Vault 地址注入测试币。
 
     在 prepare 事务提交后调用，确保 Wallet 和 Address 记录已落库。
@@ -708,7 +579,7 @@ def _fund_evm_vault(project: Project) -> None:
 
     w3 = _get_w3()
 
-    # 1. 注入 10000 ETH（覆盖大量提币 + gas）
+    # 1. 注入 10000 ETH（覆盖归集 gas 和本地压测资产）
     eth_amount_wei = 10000 * 10**18
     _set_balance(w3, vault_address, eth_amount_wei)
     logger.info("stress.vault.evm_eth_funded", vault=vault_address, amount_eth=10000)

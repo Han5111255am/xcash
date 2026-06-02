@@ -54,7 +54,7 @@ class EvmTxTaskScheduleTests(TestCase):
             "value": 1_230_000_000_000_000_000,
             "data": "",
             "gas": 21_000,
-            "tx_type": TxTaskType.Withdrawal,
+            "tx_type": TxTaskType.VaultSlotCollect,
             "verify_fn": None,
         }
         values.update(overrides)

@@ -137,7 +137,7 @@ invoices_tasks = {
 # ---------------------------
 core_tasks = {
     "scan_operational_risks": {
-        # 巡检提币、归集、Webhook 卡单风险；告警先走结构化日志，后续再接外部通知渠道。
+        # 巡检 Webhook 卡单风险；告警先走结构化日志，后续再接外部通知渠道。
         "task": "core.tasks.scan_operational_risks",
         "schedule": OPERATIONAL_RISKS_SCHEDULE_SECONDS,
     },

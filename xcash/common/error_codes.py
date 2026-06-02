@@ -37,13 +37,6 @@ class ErrorCode(Enum):
     CANT_CONTRACT_ADDRESS = ErrorInfo("2004", _("合约地址"), 400)
     INVALID_CHAIN_CRYPTO = ErrorInfo("2005", _("链、加密货币设置错误"), 400)
 
-    # Withdrawal
-    # 修复：原为裸元组，导致 .code/.message/.to_payload() 全部 AttributeError
-    INVALID_TO_ADDRESS = ErrorInfo("3000", _("地址不合法"), 400)
-    INSUFFICIENT_BALANCE = ErrorInfo("3001", _("余额不足"), 400)
-    INSUFFICIENT_RESOURCE = ErrorInfo("3002", _("链上资源不足"), 400)
-    WITHDRAWAL_SINGLE_LIMIT_EXCEEDED = ErrorInfo("3004", _("超出单笔提币限额"), 400)
-    WITHDRAWAL_DAILY_LIMIT_EXCEEDED = ErrorInfo("3005", _("超出当日提币限额"), 400)
     AMOUNT_PRECISION_EXCEEDED = ErrorInfo(
         "3006", _("金额精度超过该链上代币所支持的小数位"), 400
     )
@@ -73,7 +66,6 @@ class ErrorCode(Enum):
 
     # Internal API
     INVALID_INTERNAL_TOKEN = ErrorInfo("6000", _("内部API令牌无效"), 401)
-    WITHDRAWAL_NOT_REVIEWABLE = ErrorInfo("6001", _("提币单非审核中状态"), 400)
     PROJECT_NOT_FOUND = ErrorInfo("6002", _("项目不存在"), 404)
     FEATURE_NOT_ENABLED = ErrorInfo("6003", _("该功能未开放"), 403)
     ACCOUNT_FROZEN = ErrorInfo("6004", _("账户已冻结"), 403)

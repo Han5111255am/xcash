@@ -43,7 +43,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
 
@@ -83,7 +83,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "a1" * 32,
             status=TxTaskStatus.QUEUED,
         )
@@ -128,7 +128,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         tx_task = EvmTxTask.objects.create(
@@ -149,7 +149,7 @@ class EvmTxTaskTests(TestCase):
         tx_task.refresh_from_db()
         self.assertIsNotNone(tx_task.last_attempt_at)
 
-    def test_broadcast_preflight_skips_send_when_withdrawal_balance_insufficient(self):
+    def test_broadcast_preflight_skips_send_when_sender_balance_insufficient(self):
         chain = make_evm_chain(
             code=ChainCode.ArbitrumOne,
             rpc="http://localhost:8545",
@@ -180,7 +180,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "d" * 64,
             status=TxTaskStatus.QUEUED,
         )
@@ -232,7 +232,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         task = EvmTxTask.objects.create(
@@ -289,7 +289,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         tx_task = EvmTxTask.objects.create(
@@ -351,7 +351,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         tx_task = EvmTxTask.objects.create(
@@ -406,7 +406,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         tx_task = EvmTxTask.objects.create(
@@ -452,7 +452,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         task = EvmTxTask.objects.create(
@@ -508,7 +508,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.PENDING_CHAIN,
         )
         tx_task = EvmTxTask.objects.create(
@@ -558,7 +558,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "a5" * 32,
             status=TxTaskStatus.PENDING_CHAIN,
         )
@@ -612,7 +612,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "2" * 64,
             status=TxTaskStatus.PENDING_CHAIN,
         )
@@ -668,7 +668,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "3" * 64,
             status=TxTaskStatus.PENDING_CHAIN,
         )
@@ -720,7 +720,7 @@ class EvmTxTaskTests(TestCase):
         lower_base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         EvmTxTask.objects.create(
@@ -741,7 +741,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         tx_task = EvmTxTask.objects.create(
@@ -793,7 +793,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "4" * 64,
             status=TxTaskStatus.QUEUED,
         )
@@ -851,7 +851,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash=tx_hash,
             status=TxTaskStatus.QUEUED,
         )
@@ -922,7 +922,7 @@ class EvmTxTaskTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash=tx_hash,
             status=TxTaskStatus.QUEUED,
         )

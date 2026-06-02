@@ -13,7 +13,7 @@ from currencies.models import PriceUnavailableError
 
 
 class CustomTokenPricingTests(TestCase):
-    """未上 CoinGecko 的自定义代币：可充提币、不进支付、价格优雅降级。"""
+    """未上 CoinGecko 的自定义代币：不进支付、价格优雅降级。"""
 
     def setUp(self):
         self.chain = Chain.objects.create(code=ChainCode.Ethereum, rpc="", active=True)
@@ -36,7 +36,7 @@ class CustomTokenPricingTests(TestCase):
             self.custom.price("USD")
 
     def test_usd_amount_degrades_to_zero_without_price(self):
-        # 充/提币用的 usd_amount 在缺价时降级为 0，不阻断业务。
+        # 非支付资产流转用的 usd_amount 在缺价时降级为 0，不阻断业务。
         self.assertEqual(self.custom.usd_amount(Decimal("100")), Decimal("0"))
 
     def test_is_payable_reflects_price_source(self):

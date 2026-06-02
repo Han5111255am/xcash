@@ -35,7 +35,7 @@ def _make_evm_task(
     base_task = make_tx_task(
         chain=chain,
         address=address,
-        tx_type=TxTaskType.Withdrawal,
+        tx_type=TxTaskType.VaultSlotCollect,
         tx_hash_suffix=f"{nonce + 1:02x}",
     )
     return EvmTxTask.objects.create(

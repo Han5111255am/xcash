@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.contrib import admin
 from django.contrib import messages
 from django.shortcuts import redirect
@@ -31,7 +30,6 @@ class ProjectTelegramAlertConfigInline(StackedInline):
         "enabled",
         "telegram_chat_id",
         "telegram_thread_id",
-        "notify_on_withdrawal_stalled",
         "notify_on_webhook_stalled",
         "notify_on_recovery",
         "display_send_test_action",
@@ -47,14 +45,6 @@ class ProjectTelegramAlertConfigInline(StackedInline):
         "last_error_at",
         "last_error_message",
     )
-
-    def get_fields(self, request, obj=None):
-        fields = super().get_fields(request, obj=obj)
-        if settings.WITHDRAWAL_ENABLED:
-            return fields
-        return tuple(
-            field for field in fields if field != "notify_on_withdrawal_stalled"
-        )
 
     @display(description=_("测试消息"))
     def display_send_test_action(self, instance: ProjectTelegramAlertConfig):
@@ -112,7 +102,6 @@ class ProjectTelegramAlertConfigAdmin(ModelAdmin):
             _("告警范围"),
             {
                 "fields": (
-                    "notify_on_withdrawal_stalled",
                     "notify_on_webhook_stalled",
                     "notify_on_recovery",
                 ),
@@ -136,29 +125,6 @@ class ProjectTelegramAlertConfigAdmin(ModelAdmin):
         "last_error_at",
         "last_error_message",
     )
-
-    def get_list_filter(self, request):
-        list_filter = super().get_list_filter(request)
-        if settings.WITHDRAWAL_ENABLED:
-            return list_filter
-        return tuple(
-            field for field in list_filter if field != "notify_on_withdrawal_stalled"
-        )
-
-    def get_fieldsets(self, request, obj=None):
-        fieldsets = super().get_fieldsets(request, obj=obj)
-        if settings.WITHDRAWAL_ENABLED:
-            return fieldsets
-        filtered = []
-        for title, fieldset_options in fieldsets:
-            options = {**fieldset_options}
-            options["fields"] = tuple(
-                field
-                for field in options.get("fields", ())
-                if field != "notify_on_withdrawal_stalled"
-            )
-            filtered.append((title, options))
-        return tuple(filtered)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -186,8 +152,6 @@ class ProjectTelegramAlertConfigAdmin(ModelAdmin):
     @display(description=_("订阅范围"))
     def display_subscription_summary(self, instance: ProjectTelegramAlertConfig):
         parts = []
-        if settings.WITHDRAWAL_ENABLED and instance.notify_on_withdrawal_stalled:
-            parts.append(str(_("提币")))
         if instance.notify_on_webhook_stalled:
             parts.append(str(_("Webhook")))
         if instance.notify_on_recovery:

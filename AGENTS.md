@@ -5,7 +5,7 @@
 
 ## 项目概述
 
-- Xcash, 基于 Django 的开源企业级加密货币金融网关，支持支付、充币、提币， 支持多商户与多项目管理。
+- Xcash, 基于 Django 的开源企业级加密货币金融网关，支持支付、充币，支持多商户与多项目管理。
 - 使用 uv 进行环境管理，本地调试使用 uv run 运行 python 命令。
 - Address 模型私钥仅存在于内部系统，不可能在系统外发送交易，所以 evm 类型的 nonce 在每个 chain 严格从 0 逐一递增。
 - 当前 admin theme 用的是 django-unfold，admin 页面开发要遵循UI风格统一。

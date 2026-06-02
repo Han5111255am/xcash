@@ -789,7 +789,7 @@ class InvoiceAllowedMethodsCapabilityTests(TestCase):
             f"saas:permission:{project.appid}",
             {
                 "frozen": False,
-                "enable_deposit_withdrawal": True,
+                "enable_deposit": True,
                 "allowed_chain_codes": [eth_chain.code],
                 "allowed_crypto_symbols": [usdt.symbol],
             },
@@ -844,7 +844,7 @@ class InvoiceAllowedMethodsCapabilityTests(TestCase):
             f"saas:permission:{project.appid}",
             {
                 "frozen": False,
-                "enable_deposit_withdrawal": True,
+                "enable_deposit": True,
                 "allowed_chain_codes": [],
                 "allowed_crypto_symbols": [],
             },
@@ -888,7 +888,7 @@ class InvoiceAllowedMethodsCapabilityTests(TestCase):
             f"saas:permission:{project.appid}",
             {
                 "frozen": False,
-                "enable_deposit_withdrawal": True,
+                "enable_deposit": True,
                 "allowed_chain_codes": [eth_chain.code.upper()],
                 "allowed_crypto_symbols": [usdt.symbol],
             },

@@ -15,8 +15,6 @@ from .models import InvoiceStressCase
 from .models import InvoiceStressCaseStatus
 from .models import StressRun
 from .models import StressRunStatus
-from .models import WithdrawalStressCase
-from .models import WithdrawalStressCaseStatus
 from .payment import simulate_payment
 from .service import StressService
 
@@ -199,84 +197,6 @@ def _do_payment(case: InvoiceStressCase) -> dict[str, str]:
     )
 
 
-@shared_task(ignore_result=True, soft_time_limit=120, time_limit=180, **_RETRY_KWARGS)
-def execute_withdrawal_case(case_id: int) -> None:
-    """执行单个 WithdrawalStressCase 的完整流程。"""
-    try:
-        case = WithdrawalStressCase.objects.select_related("stress_run__project").get(
-            pk=case_id
-        )
-    except WithdrawalStressCase.DoesNotExist:
-        return
-
-    if case.status != WithdrawalStressCaseStatus.PENDING:
-        return
-
-    case.started_at = timezone.now()
-    case.status = WithdrawalStressCaseStatus.CREATING
-    case.save(update_fields=["started_at", "status"])
-
-    try:
-        _execute_withdrawal(case)
-    except Exception as exc:
-        logger.exception("stress.withdrawal_case.failed", case_id=case.pk)
-        case.status = WithdrawalStressCaseStatus.FAILED
-        case.error = str(exc)[:2000]
-        case.finished_at = timezone.now()
-        case.save(update_fields=["status", "error", "finished_at"])
-        StressService.on_case_finished(case)
-
-
-def _execute_withdrawal(case: WithdrawalStressCase) -> None:
-    """WithdrawalStressCase 执行核心流程。"""
-    # 阶段 1: 调用提币 API
-    resp = StressService.create_withdrawal(case)
-    case.withdrawal_sys_no = resp["sys_no"]
-    case.withdrawal_out_no = f"STRESS-WD-{case.stress_run_id}-{case.sequence}"
-    case.tx_hash = resp.get("hash", "")
-    case.status = WithdrawalStressCaseStatus.CREATED
-    case.api_done_at = timezone.now()
-    case.save(
-        update_fields=[
-            "withdrawal_sys_no",
-            "withdrawal_out_no",
-            "tx_hash",
-            "status",
-            "api_done_at",
-        ]
-    )
-
-    # 阶段 2: 等待链上确认（由系统自动处理）
-    case.status = WithdrawalStressCaseStatus.CONFIRMING
-    case.save(update_fields=["status"])
-
-    # 派发超时检查任务（15 分钟后）
-    check_withdrawal_webhook_timeout.apply_async(
-        args=[case.pk],
-        eta=timezone.now() + timedelta(minutes=15),
-    )
-
-
-@shared_task(ignore_result=True)
-def check_withdrawal_webhook_timeout(case_id: int) -> None:
-    """检查 WithdrawalStressCase 是否在超时前收到了 webhook。"""
-    with transaction.atomic():
-        try:
-            case = WithdrawalStressCase.objects.select_for_update().get(pk=case_id)
-        except WithdrawalStressCase.DoesNotExist:
-            return
-
-        if case.status != WithdrawalStressCaseStatus.CONFIRMING:
-            return
-
-        case.status = WithdrawalStressCaseStatus.FAILED
-        case.error = "webhook 超时未收到（15 分钟）"
-        case.finished_at = timezone.now()
-        case.save(update_fields=["status", "error", "finished_at"])
-
-    StressService.on_case_finished(case)
-
-
 @shared_task(ignore_result=True)
 def finalize_stress_timeout(stress_run_id: int) -> None:
     """StressRun 级别的兜底超时：将所有未执行的 case 标记为 skipped 并结束整轮压测。
@@ -298,11 +218,6 @@ def finalize_stress_timeout(stress_run_id: int) -> None:
             InvoiceStressCaseStatus.FAILED,
             InvoiceStressCaseStatus.SKIPPED,
         }
-        terminal_withdrawal = {
-            WithdrawalStressCaseStatus.SUCCEEDED,
-            WithdrawalStressCaseStatus.FAILED,
-            WithdrawalStressCaseStatus.SKIPPED,
-        }
         terminal_deposit = {
             DepositStressCaseStatus.SUCCEEDED,
             DepositStressCaseStatus.FAILED,
@@ -310,29 +225,17 @@ def finalize_stress_timeout(stress_run_id: int) -> None:
         }
 
         non_terminal_invoices = stress_run.cases.exclude(status__in=terminal_invoice)
-        non_terminal_withdrawals = stress_run.withdrawal_cases.exclude(
-            status__in=terminal_withdrawal
-        )
         non_terminal_deposits = stress_run.deposit_cases.exclude(
             status__in=terminal_deposit
         )
 
-        skipped_count = (
-            non_terminal_invoices.count()
-            + non_terminal_withdrawals.count()
-            + non_terminal_deposits.count()
-        )
+        skipped_count = non_terminal_invoices.count() + non_terminal_deposits.count()
         if skipped_count == 0:
             return
 
         now = timezone.now()
         non_terminal_invoices.update(
             status=InvoiceStressCaseStatus.SKIPPED,
-            error="压测整轮超时，任务未执行",
-            finished_at=now,
-        )
-        non_terminal_withdrawals.update(
-            status=WithdrawalStressCaseStatus.SKIPPED,
             error="压测整轮超时，任务未执行",
             finished_at=now,
         )

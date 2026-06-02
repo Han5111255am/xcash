@@ -16,7 +16,6 @@ from alerts.models import ProjectAlertStatus
 from alerts.models import ProjectTelegramAlertConfig
 from core.monitoring import OperationalRiskService
 from core.runtime_settings import get_alerts_repeat_interval_minutes
-from withdrawals.models import WithdrawalReviewStatus
 
 
 class TelegramAlertError(Exception):
@@ -72,37 +71,6 @@ class TelegramAlertService:
                 enabled=True
             ).select_related("project")
         }
-
-        for withdrawal in OperationalRiskService.stalled_withdrawals():
-            state = self._upsert_state(
-                project=withdrawal.project,
-                event_type=ProjectAlertEventType.WITHDRAWAL_STALLED,
-                object_type="withdrawal",
-                object_pk=withdrawal.pk,
-                severity=(
-                    ProjectAlertSeverity.CRITICAL
-                    if withdrawal.review_status != WithdrawalReviewStatus.REVIEWING
-                    else ProjectAlertSeverity.HIGH
-                ),
-                title=str(_("提币长时间未完成")),
-                detail=str(
-                    _("%(out_no)s / %(status)s / %(crypto)s-%(chain)s")
-                    % {
-                        "out_no": withdrawal.out_no,
-                        "status": withdrawal.tx_status_display,
-                        "crypto": withdrawal.crypto.symbol,
-                        "chain": withdrawal.chain.code if withdrawal.chain else "-",
-                    }
-                ),
-                admin_url=reverse(
-                    "admin:withdrawals_withdrawal_change", args=[withdrawal.pk]
-                ),
-                seen_at=now,
-            )
-            active_fingerprints.add(state.fingerprint)
-            self._notify_if_due(
-                state=state, mode="open", now=now, config_cache=config_cache
-            )
 
         for event in OperationalRiskService.stalled_webhook_events():
             state = self._upsert_state(

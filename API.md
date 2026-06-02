@@ -204,7 +204,6 @@ const headers = {
 | GET | `/v1/invoice/{sys_no}` | 查询账单 | 不需要 |
 | POST | `/v1/invoice/{sys_no}/select-method` | 选择支付方式 | 不需要 |
 | GET | `/v1/deposit/address` | 获取充币地址 | 需要 |
-| POST | `/v1/withdrawal` | 发起提币 | 需要 |
 | GET / POST | `/epay/submit.php` | 易支付（EPay）创建订单 | 需要（MD5） |
 
 ---
@@ -515,78 +514,17 @@ GET /v1/deposit/address?uid=user123&chain=ethereum-mainnet&crypto=USDT
 
 ---
 
-## 发起提币
-
-**POST** `/v1/withdrawal`
-
-**需要签名**
-
-从项目 Vault 地址向指定地址发起提币。系统会校验余额、地址合法性、单笔/日限额。
-
-### 请求参数
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `out_no` | string | 是 | 商户提币单号，最长 128 位，同一项目下唯一 |
-| `to` | string | 是 | 收款地址（不可为平台内部地址，不可为合约地址） |
-| `uid` | string | 否 | 用户标识，最长 32 位 |
-| `crypto` | string | 是 | 加密货币符号，如 `USDT` |
-| `chain` | string | 是 | 链码，如 `ethereum-mainnet`、`tron-mainnet` |
-| `amount` | string | 是 | 提币金额，范围 0.00000001 ~ 1000000 |
-
-### 请求示例
-
-```json
-{
-  "out_no": "withdraw-20240101-001",
-  "to": "0x9876...fedc",
-  "uid": "user123",
-  "crypto": "USDT",
-  "chain": "ethereum-mainnet",
-  "amount": "100"
-}
-```
-
-### 响应示例
-
-```json
-{
-  "sys_no": "WDR-xxxxxxxx",
-  "hash": "",
-  "status": "reviewing"
-}
-```
-
-### 提币状态说明
-
-| 状态 | 说明 |
-|------|------|
-| `reviewing` | 审核中（需管理员审批） |
-| `pending` | 已审批，等待广播 |
-| `confirming` | 已广播，链上确认中 |
-| `completed` | 完成 |
-| `rejected` | 已拒绝 |
-| `failed` | 执行失败 |
-
-### 限流
-
-30 次/分钟（按 appid + IP 维度）
-
----
-
 ## Webhook 回调
 
 当业务进入 Webhook 触发点时，Xcash 会向项目配置的 Webhook URL 发送 `POST` 请求。
-当前覆盖三类事件：
+当前覆盖两类事件：
 
 - `invoice`：API 创建的账单进入确认中 / 已完成
 - `deposit`：充币进入确认中 / 已完成
-- `withdrawal`：提币进入链上确认中 / 已完成
-
 ### 投递地址优先级
 
 - 账单类事件（包括原生协议账单与 EPay V1 账单）：若账单本身配置了 `notify_url`（创建账单 API 传入或 EPay `submit.php` 传入），优先投递到该地址；为空时回退到项目配置的 Webhook URL。
-- 充币、提币事件：始终投递到项目配置的 Webhook URL。
+- 充币事件：始终投递到项目配置的 Webhook URL。
 
 无论使用账单级地址还是项目级地址，都受同一套签名、重试、禁用策略约束。
 
@@ -628,7 +566,7 @@ signature = HMAC-SHA256(message, hmac_key).hexdigest()
 
 ```json
 {
-  "type": "invoice | deposit | withdrawal",
+  "type": "invoice | deposit",
   "data": {
     "confirmed": false,
     ...
@@ -714,45 +652,6 @@ signature = HMAC-SHA256(message, hmac_key).hexdigest()
 | `amount` | string | 充币金额 |
 | `confirmed` | boolean | 链上交易是否已确认 |
 
-### 提币回调（Withdrawal）
-
-触发逻辑：
-
-- `confirmed: false`：提币已匹配到链上转账，进入 `confirming`
-- `confirmed: true`：提币确认完成，进入 `completed`
-- `reviewing`、`pending`、`rejected`、`failed` 状态不会发送 Webhook
-
-提币链上广播后推送（仅链上确认中和已确认两个阶段）：
-
-```json
-{
-  "type": "withdrawal",
-  "data": {
-    "sys_no": "WDR-xxxxxxxx",
-    "out_no": "withdraw-20240101-001",
-    "chain": "ethereum-mainnet",
-    "hash": "0xabcd...1234",
-    "amount": "100",
-    "crypto": "USDT",
-    "confirmed": true,
-    "uid": "user123"
-  }
-}
-```
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `sys_no` | string | 系统提币单号 |
-| `out_no` | string | 商户提币单号 |
-| `chain` | string | 链码 |
-| `hash` | string | 链上交易哈希 |
-| `amount` | string | 提币金额 |
-| `crypto` | string | 币种符号 |
-| `confirmed` | boolean | 提币是否已达到最终确认 |
-| `uid` | string | 用户标识，仅在创建提币时传入了 `uid` 的情况下才出现 |
-
----
-
 ## 账单状态说明
 
 | 状态 | 说明 |
@@ -791,16 +690,6 @@ signature = HMAC-SHA256(message, hmac_key).hexdigest()
 | 2003 | 地址格式错误 | 400 |
 | 2004 | 不能为合约地址 | 400 |
 | 2005 | 链与加密货币设置错误 | 400 |
-
-### 提币错误（3xxx）
-
-| 错误码 | 说明 | HTTP 状态码 |
-|--------|------|-------------|
-| 3000 | 提币地址不合法 | 400 |
-| 3001 | 余额不足 | 400 |
-| 3002 | 链上资源不足 | 400 |
-| 3004 | 超出单笔提币限额 | 400 |
-| 3005 | 超出当日提币限额 | 400 |
 
 ### 充币错误（4xxx）
 
@@ -868,24 +757,6 @@ signature = HMAC-SHA256(message, hmac_key).hexdigest()
     |<-- Webhook: deposit ---------|                              |
     |-- 响应 "ok" ---------------->|                              |
 ```
-
-### 提币（Withdrawal）
-
-```
-商户服务器                        Xcash
-    |                              |
-    |-- POST /v1/withdrawal ------>|
-    |<-- 返回 sys_no, status ------|
-    |                              |
-    |                              |-- 管理员审批（如需要）
-    |                              |-- 链上广播
-    |                              |-- 链上确认
-    |                              |
-    |<-- Webhook: withdrawal -------|
-    |-- 响应 "ok" ---------------->|
-```
-
----
 
 ## 易支付（EPay）兼容
 

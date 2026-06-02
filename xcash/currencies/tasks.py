@@ -14,7 +14,7 @@ logger = structlog.get_logger()
 def refresh_crypto_prices():
     crypto_ids = list(
         # 无 coingecko_id 的币（未上 CoinGecko 的自定义代币）没有可刷新的行情源，跳过；
-        # 它们只支持充/提币，不进按法币计价的支付，无需价格。
+        # 它们只支持非支付资产流转，不进按法币计价的支付，无需价格。
         Crypto.objects.filter(active=True, coingecko_id__isnull=False).values_list(
             "coingecko_id",
             flat=True,

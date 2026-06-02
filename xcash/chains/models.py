@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 from decimal import Decimal
 from functools import cached_property
 from typing import TYPE_CHECKING
@@ -29,7 +28,6 @@ if TYPE_CHECKING:
     from currencies.models import Crypto
     from deposits.models import Deposit
     from invoices.models import Invoice
-    from withdrawals.models import Withdrawal
 
 env = environ.Env()
 logger = structlog.get_logger()
@@ -502,7 +500,6 @@ class Address(UndeletableModel):
 class TxTaskType(models.TextChoices):
     """TxTask.tx_type 的枚举：仅描述系统内部主动发起的链上交易。"""
 
-    Withdrawal = "withdrawal", "🏧 提币"
     VaultSlotDeploy = "vault_slot_deploy", "🏦 VaultSlot 部署"
     VaultSlotCollect = "vault_slot_collect", "💰 VaultSlot 归集"
 
@@ -513,7 +510,6 @@ class TransferType(models.TextChoices):
     Unmatched = "unmatched", _("未归类")
     Invoice = "invoice", _("💳 支付")
     Deposit = "deposit", "💰 充币"
-    Withdrawal = "withdrawal", "🏧 提币"
     Collect = "collect", "💰 归集"
 
 
@@ -582,7 +578,7 @@ class TxTask(UndeletableModel):
       上链周期是固定的线性流程加末端成功/失败分叉，故无需把"阶段"与"结果"
       拆成两个字段再用跨字段约束维持一致；终局态由 TERMINAL_TX_TASK_STATUSES 判定。
     - 广播重试等实现细节继续留在各链子表，避免把"是否广播"污染到统一领域模型。
-    - Withdrawal 等业务对象统一外键到该模型，不再直接依赖具体链实现或 tx hash。
+    - VaultSlotCollect 等业务对象统一外键到该模型，不再直接依赖具体链实现或 tx hash。
     """
 
     sender = models.ForeignKey(
@@ -672,14 +668,6 @@ class TxTask(UndeletableModel):
             tx_hash=tx_hash,
             updated_at=timezone.now(),
         )
-        if locked_task.tx_type == TxTaskType.Withdrawal:
-            from withdrawals.models import Withdrawal
-
-            # hash 由 tx_task 派生（见 Withdrawal.hash 属性），无需再回写；
-            # 仍刷新 updated_at 以重置后台巡检的阶段超时计时。
-            Withdrawal.objects.filter(tx_task=locked_task).update(
-                updated_at=timezone.now(),
-            )
         self.tx_hash = tx_hash
         return created
 
@@ -726,14 +714,6 @@ class TxTask(UndeletableModel):
                 updated_at=timezone.now(),
             )
         )
-        if updated and task.tx_type == TxTaskType.Withdrawal:
-            from withdrawals.models import Withdrawal
-
-            # hash 由 tx_task 派生（见 Withdrawal.hash 属性），无需再回写；
-            # 仍刷新 updated_at 以重置后台巡检的阶段超时计时。
-            Withdrawal.objects.filter(tx_task=task).update(
-                updated_at=timezone.now(),
-            )
         return bool(updated)
 
     @staticmethod
@@ -777,14 +757,6 @@ class TxTask(UndeletableModel):
             status=TxTaskStatus.PENDING_CHAIN,
             updated_at=timezone.now(),
         )
-        if updated and task.tx_type == TxTaskType.Withdrawal:
-            from withdrawals.models import Withdrawal
-
-            # hash 由 tx_task 派生（见 Withdrawal.hash 属性），无需再回写；
-            # 仍刷新 updated_at 以重置后台巡检的阶段超时计时。
-            Withdrawal.objects.filter(tx_task=task).update(
-                updated_at=timezone.now(),
-            )
         return bool(updated)
 
     @staticmethod
@@ -809,14 +781,6 @@ class TxTask(UndeletableModel):
                 updated_at=timezone.now(),
             )
         )
-        if updated and task.tx_type == TxTaskType.Withdrawal:
-            from withdrawals.models import Withdrawal
-
-            # hash 由 tx_task 派生（见 Withdrawal.hash 属性），无需再回写；
-            # 仍刷新 updated_at 以重置后台巡检的阶段超时计时。
-            Withdrawal.objects.filter(tx_task=task).update(
-                updated_at=timezone.now(),
-            )
         return bool(updated)
 
 
@@ -835,7 +799,6 @@ class Transfer(models.Model):
         # Django 反向 OneToOne 描述符在运行时动态挂载；这里显式声明给 IDE 做静态解析。
         invoice: Invoice
         deposit: Deposit
-        withdrawal: Withdrawal
 
     chain = models.ForeignKey(Chain, on_delete=models.CASCADE, verbose_name=_("链"))
     block = models.IntegerField(_("区块高度"))
@@ -864,7 +827,7 @@ class Transfer(models.Model):
         max_length=8,
         verbose_name=_("确认模式"),
         help_text=_(
-            "当前仅 Invoice 业务根据 fast_confirm_threshold 动态设置 QUICK/FULL；Deposit 与 Withdrawal 始终使用默认 FULL，走完整区块确认流程。"
+            "当前仅 Invoice 业务根据 fast_confirm_threshold 动态设置 QUICK/FULL；Deposit 始终使用默认 FULL，走完整区块确认流程。"
         ),
     )
     timestamp = models.PositiveIntegerField(verbose_name=_("时间戳"), db_index=True)
@@ -900,7 +863,7 @@ class Transfer(models.Model):
         if self.processed_at:
             return
 
-        # 优先通过 TxHash 匹配内部交易任务（提币等），
+        # 优先通过 TxHash 匹配内部交易任务，
         # 一次 resolve 即可定位业务类型，避免逐一 try_match 重复查询。
         tx_task = TxTask.resolve_by_hash(chain=self.chain, tx_hash=self.hash)
         if tx_task is not None:
@@ -951,8 +914,8 @@ class Transfer(models.Model):
                 return False
             return handler.match(self, tx_task)
 
-        # 提币等内部任务仅在 EVM 链创建（submit_withdrawal 强制 EVM），
-        # 非 EVM 链不存在可认领的内部任务，统一交回外部收款逻辑。
+        # 当前内部主动交易仅在 EVM 链创建，非 EVM 链不存在可认领的内部任务，
+        # 统一交回外部收款逻辑。
         return False
 
     @db_transaction.atomic
@@ -1023,8 +986,6 @@ class Transfer(models.Model):
             InvoiceService.confirm_invoice(self.invoice)
         elif self.type == TransferType.Deposit:
             DepositService.confirm_deposit(self.deposit)
-        elif self.type == TransferType.Withdrawal:
-            self._dispatch_withdrawal_confirm()
         elif self.type in {TransferType.Collect}:
             return
 
@@ -1037,25 +998,5 @@ class Transfer(models.Model):
             InvoiceService.drop_invoice(self.invoice)
         elif self.type == TransferType.Deposit:
             DepositService.drop_deposit(self.deposit)
-        elif self.type == TransferType.Withdrawal:
-            self._dispatch_withdrawal_drop()
         elif self.type in {TransferType.Collect}:
             return
-
-    def _dispatch_withdrawal_confirm(self) -> None:
-        # 提币仅在 EVM 链产生（submit_withdrawal 强制 EVM），非 EVM 不存在提币 Transfer。
-        if self.chain.type != ChainType.EVM:
-            return
-        from evm.internal_tx.routing import get_handler
-
-        with contextlib.suppress(KeyError):
-            get_handler(TxTaskType.Withdrawal).confirm(self)
-
-    def _dispatch_withdrawal_drop(self) -> None:
-        # 提币仅在 EVM 链产生（submit_withdrawal 强制 EVM），非 EVM 不存在提币 Transfer。
-        if self.chain.type != ChainType.EVM:
-            return
-        from evm.internal_tx.routing import get_handler
-
-        with contextlib.suppress(KeyError):
-            get_handler(TxTaskType.Withdrawal).drop(self)

@@ -37,12 +37,9 @@ def _build_environment_badge(
     if not health.get("healthy", True) or not _signer_auth_configured(signer_summary):
         return [_("Signer异常"), "danger"]
 
-    if risk_summary["stalled_webhook_event_count"] > 0:
-        return [_("存在高风险告警"), "danger"]
-
-    pending_count = risk_summary["stalled_withdrawal_count"]
+    pending_count = risk_summary["stalled_webhook_event_count"]
     if pending_count > 0:
-        return [_("%(count)s项待处理") % {"count": pending_count}, "warning"]
+        return [_("存在高风险告警"), "danger"]
 
     return [_("运行正常"), "success"]
 
@@ -126,34 +123,6 @@ def _build_operational_inspection_payload(metrics, signer_summary):
         }
     )
     attention_items.extend(stalled_invoice_rows)
-
-    stalled_withdrawal_rows = [
-        {
-            "level": _("中"),
-            "title": _("提币长时间未完成"),
-            "description": _("%(project)s / %(out_no)s / %(crypto)s-%(chain)s")
-            % {
-                "project": withdrawal.project.name,
-                "out_no": withdrawal.out_no,
-                "crypto": withdrawal.crypto.symbol,
-                "chain": withdrawal.chain.code if withdrawal.chain else "-",
-            },
-            "href": reverse(
-                "admin:withdrawals_withdrawal_change", args=[withdrawal.pk]
-            ),
-        }
-        for withdrawal in metrics["recent_stalled_withdrawals"]
-    ]
-    inspection_sections.append(
-        {
-            "title": _("提币执行巡检"),
-            "subtitle": _("长时间未完成的提币"),
-            "count": len(stalled_withdrawal_rows),
-            "rows": stalled_withdrawal_rows,
-            "empty_text": _("当前没有卡住的提币单"),
-        }
-    )
-    attention_items.extend(stalled_withdrawal_rows)
 
     stalled_webhook_rows = [
         {
@@ -240,16 +209,6 @@ def _build_operational_inspection_summary_cards(snapshot, signer_summary):
                 "soon": snapshot["expiring_soon_count"],
             },
             "tone": "bg-amber-50",
-        },
-        {
-            "title": _("提币巡检"),
-            "metric": snapshot["stalled_withdrawal_count"],
-            "subtitle": _("卡住提币 %(stalled)s 笔，审核中 %(reviewing)s 笔")
-            % {
-                "stalled": snapshot["stalled_withdrawal_count"],
-                "reviewing": snapshot["reviewing_withdrawal_count"],
-            },
-            "tone": "bg-rose-50",
         },
         {
             "title": _("Webhook 巡检"),
@@ -359,24 +318,6 @@ def dashboard_callback(request, context):
             "href": f"{reverse('admin:invoices_invoice_changelist')}?status__exact=confirming",
         },
         {
-            "label": _("审核中提币"),
-            "value": snapshot["reviewing_withdrawal_count"],
-            "detail": _("等待人工审核"),
-            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?review_status__exact=reviewing",
-        },
-        {
-            "label": _("待执行提币"),
-            "value": snapshot["pending_withdrawal_count"],
-            "detail": _("等待系统构建/广播"),
-            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?tx_task__status__exact=pending_chain",
-        },
-        {
-            "label": _("确认中提币"),
-            "value": snapshot["confirming_withdrawal_count"],
-            "detail": _("链上已上链，等待确认"),
-            "href": f"{reverse('admin:withdrawals_withdrawal_changelist')}?tx_task__status__exact=pending_confirm",
-        },
-        {
             "label": _("待投递事件"),
             "value": snapshot["pending_events_count"],
             "detail": _("等待 Webhook 调度"),
@@ -392,15 +333,6 @@ def dashboard_callback(request, context):
 
     health_cards = [
         {
-            "title": _("提币执行"),
-            "metric": _fmt_usd(snapshot["completed_withdrawal_worth_30d"]),
-            "subtitle": _("近30日成功 %(done)s 笔，拒绝 %(rejected)s 笔")
-            % {
-                "done": snapshot["completed_withdrawal_count_30d"],
-                "rejected": snapshot["rejected_withdrawal_count_30d"],
-            },
-        },
-        {
             "title": _("Webhook 投递"),
             "metric": _("%(ok)s / %(total)s 成功")
             % {
@@ -412,12 +344,8 @@ def dashboard_callback(request, context):
         },
         {
             "title": _("任务巡检"),
-            "metric": _("%(wdr)s / %(wh)s")
-            % {
-                "wdr": snapshot["stalled_withdrawal_count"],
-                "wh": snapshot["stalled_webhook_event_count"],
-            },
-            "subtitle": _("卡住提币 / 超时回调"),
+            "metric": snapshot["stalled_webhook_event_count"],
+            "subtitle": _("超时回调"),
         },
     ]
     if signer_summary:

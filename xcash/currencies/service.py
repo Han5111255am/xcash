@@ -34,7 +34,7 @@ class CryptoService:
 
     @staticmethod
     def exists(symbol: str, *, active_only: bool = True) -> bool:
-        # 停用的币不应被 invoice / withdrawal / deposit 地址申请等正式入口识别为可用资产。
+        # 停用的币不应被 invoice / deposit 地址申请等正式入口识别为可用资产。
         queryset = Crypto.objects.filter(symbol=symbol)
         if active_only:
             queryset = queryset.filter(active=True)

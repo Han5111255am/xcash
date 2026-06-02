@@ -150,7 +150,7 @@ class EvmChainScannerServiceTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             status=TxTaskStatus.QUEUED,
         )
         tx_task = EvmTxTask.objects.create(
@@ -206,7 +206,7 @@ class EvmChainScannerServiceTests(TestCase):
                     "0x00000000000000000000000000000000000000f2"
                 ),
                 value=123,
-                tx_type=TxTaskType.Withdrawal,
+                tx_type=TxTaskType.VaultSlotCollect,
             )
         )
 
@@ -258,7 +258,7 @@ class EvmChainScannerServiceTests(TestCase):
                     "0x00000000000000000000000000000000000000fb"
                 ),
                 value=123,
-                tx_type=TxTaskType.Withdrawal,
+                tx_type=TxTaskType.VaultSlotCollect,
             )
         )
 
@@ -309,7 +309,7 @@ class EvmChainScannerServiceTests(TestCase):
             filler_base = TxTask.objects.create(
                 chain=chain,
                 sender=addr,
-                tx_type=TxTaskType.Withdrawal,
+                tx_type=TxTaskType.VaultSlotCollect,
                 status=TxTaskStatus.CONFIRMED,
             )
             EvmTxTask.objects.create(
@@ -328,7 +328,7 @@ class EvmChainScannerServiceTests(TestCase):
         base_task = TxTask.objects.create(
             chain=chain,
             sender=addr,
-            tx_type=TxTaskType.Withdrawal,
+            tx_type=TxTaskType.VaultSlotCollect,
             tx_hash="0x" + "ef" * 32,
             status=TxTaskStatus.QUEUED,
         )
@@ -360,7 +360,7 @@ class EvmChainScannerServiceTests(TestCase):
                     "0x00000000000000000000000000000000000000f7"
                 ),
                 value=123,
-                tx_type=TxTaskType.Withdrawal,
+                tx_type=TxTaskType.VaultSlotCollect,
             )
         )
 
@@ -416,7 +416,7 @@ class EvmChainScannerServiceTests(TestCase):
                     "0x00000000000000000000000000000000000000f9"
                 ),
                 value=123,
-                tx_type=TxTaskType.Withdrawal,
+                tx_type=TxTaskType.VaultSlotCollect,
             )
         )
 

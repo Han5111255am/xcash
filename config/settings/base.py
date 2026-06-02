@@ -88,11 +88,6 @@ WEBHOOK_ALLOW_INTERNAL_TARGETS = env.bool(
     "WEBHOOK_ALLOW_INTERNAL_TARGETS", default=False
 )
 
-# Withdrawal
-# ------------------------------------------------------------------------------
-# 开源默认关闭主动出金能力，避免部署方在未明确承担热钱包出金风险前暴露提币入口。
-WITHDRAWAL_ENABLED = env.bool("WITHDRAWAL_ENABLED", default=False)
-
 # Rate Limit
 RATELIMIT_BACKEND = "redis"
 RATELIMIT_REDIS = {
@@ -197,10 +192,7 @@ LOCAL_APPS = [
     "projects",
     "currencies",
     "invoices",
-    # 本地启动验证时发现 API 路由已引用 deposits/withdrawals，
-    # 但未注册到 INSTALLED_APPS，导致 Django 导入模型阶段直接失败。
     "deposits",
-    "withdrawals",
     "webhooks",
     "risk",
     # EVM 链相关模型（EvmOnchainTask）
@@ -441,10 +433,8 @@ CELERY_TASK_ROUTES = {
     "tron.tasks.scan_active_tron_chains": {"queue": "scan"},
     "stress.tasks.prepare_stress": {"queue": "stress"},
     "stress.tasks.execute_stress_case": {"queue": "stress"},
-    "stress.tasks.execute_withdrawal_case": {"queue": "stress"},
     "stress.tasks.execute_deposit_case": {"queue": "stress"},
     "stress.tasks.check_webhook_timeout": {"queue": "stress"},
-    "stress.tasks.check_withdrawal_webhook_timeout": {"queue": "stress"},
     "stress.tasks.check_deposit_webhook_timeout": {"queue": "stress"},
     "stress.tasks.finalize_stress_timeout": {"queue": "stress"},
     "stress.tasks.verify_deposit_collection": {"queue": "stress"},
@@ -461,7 +451,6 @@ REST_FRAMEWORK = {
         "anon": "256/minute",
         "invoice_retrieve": "60/minute",
         "invoice_select_method": "10/minute",
-        "withdrawal_create": "30/minute",
         "vault_slot": "60/minute",
     },
     # 统一分页策略：GenericAPIView 及其子类（ModelViewSet/GenericViewSet 等）默认启用
@@ -474,10 +463,3 @@ REST_FRAMEWORK = {
 # Your stuff...
 # ------------------------------------------------------------------------------
 from config.settings.unfold import UNFOLD  # noqa
-
-if not WITHDRAWAL_ENABLED:
-    UNFOLD["SIDEBAR"]["navigation"] = [
-        section
-        for section in UNFOLD["SIDEBAR"]["navigation"]
-        if section.get("feature") != "withdrawal"
-    ]

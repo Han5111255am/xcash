@@ -299,5 +299,4 @@ known-first-party = [
     "projects",
     "users",
     "webhooks",
-    "withdrawals",
 ]

@@ -1,5 +1,4 @@
 from django import forms
-from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin import helpers
 from django.contrib.admin.utils import flatten_fieldsets
@@ -81,10 +80,6 @@ class ProjectForm(forms.ModelForm):
             "fast_confirm_threshold",
             "hmac_key",
             "vault",
-            "withdrawal_review_required",
-            "withdrawal_review_exempt_limit",
-            "withdrawal_single_limit",
-            "withdrawal_daily_limit",
             "active",
         )
 
@@ -311,15 +306,7 @@ class EpayMerchantInline(StackedInline):
 @admin.register(Project)
 class ProjectAdmin(ModelAdmin):
     change_form_outer_after_template = "admin/includes/project_change_otp_modal.html"
-    SENSITIVE_PROJECT_FIELDS = frozenset(
-        {
-            "withdrawal_review_required",
-            "withdrawal_review_exempt_limit",
-            "withdrawal_single_limit",
-            "withdrawal_daily_limit",
-            "vault",
-        }
-    )
+    SENSITIVE_PROJECT_FIELDS = frozenset({"vault"})
     form = ProjectForm
     inlines = (
         DifferRecipientAddressInline,
@@ -330,7 +317,6 @@ class ProjectAdmin(ModelAdmin):
         "name",
         "appid",
         "display_ready_status",
-        "display_withdrawal_policy",
         "webhook",
         "failed_count",
         "webhook_open",
@@ -340,7 +326,6 @@ class ProjectAdmin(ModelAdmin):
     list_filter = (
         "active",
         "webhook_open",
-        "withdrawal_review_required",
     )
     search_fields = ("name", "appid", "webhook")
 
@@ -357,19 +342,11 @@ class ProjectAdmin(ModelAdmin):
         return context
 
     def _project_form_changes_sensitive_fields(self, form) -> bool:
-        # 只有提币风控字段真正变化时才要求 fresh OTP，避免普通项目配置编辑被一刀切。
+        # 只有资金基础设施字段真正变化时才要求 fresh OTP，避免普通项目配置编辑被一刀切。
         if form is None:
             return False
         changed_fields = set(getattr(form, "changed_data", ()) or ())
-        sensitive_fields = self.SENSITIVE_PROJECT_FIELDS
-        if not settings.WITHDRAWAL_ENABLED:
-            sensitive_fields = sensitive_fields - {
-                "withdrawal_review_required",
-                "withdrawal_review_exempt_limit",
-                "withdrawal_single_limit",
-                "withdrawal_daily_limit",
-            }
-        return bool(changed_fields & sensitive_fields)
+        return bool(changed_fields & self.SENSITIVE_PROJECT_FIELDS)
 
     def _project_post_changes_sensitive_fields(self, request, obj: Project) -> bool:
         # changeform_view 需要在进入保存前预判风险级别，这里复用 admin form 的变更比较逻辑。
@@ -444,7 +421,7 @@ class ProjectAdmin(ModelAdmin):
             "otp_verify_form": form,
             "otp_modal_locked_title": _("继续保存前需要重新验证"),
             "otp_modal_locked_text": _(
-                "提币风控属于高风险配置。请输入一次两步验证码后继续保存。"
+                "项目资金配置属于高风险配置。请输入一次两步验证码后继续保存。"
             ),
             "otp_modal_submit_label": _("验证并保存"),
             "otp_modal_hidden_fields": self._build_otp_modal_hidden_fields(request),
@@ -531,7 +508,7 @@ class ProjectAdmin(ModelAdmin):
                         extra_context,
                     )
                 try:
-                    # 只有资金风控字段变化时才在入口处前置 OTP，保持修改体验与风险等级匹配。
+                    # 只有资金基础设施字段变化时才在入口处前置 OTP，保持修改体验与风险等级匹配。
                     self._require_fresh_project_change_otp(request)
                 except AdminOTPRequiredError:
                     set_pending_admin_otp(
@@ -611,29 +588,7 @@ class ProjectAdmin(ModelAdmin):
     def get_fieldsets(self, request, obj=None):
         if obj is None:
             return self.add_fieldsets
-        if settings.WITHDRAWAL_ENABLED:
-            return self.edit_fieldsets
-        return tuple(
-            fieldset
-            for fieldset in self.edit_fieldsets
-            if str(fieldset[0]) != "提币风控"
-        )
-
-    def get_list_display(self, request):
-        list_display = super().get_list_display(request)
-        if settings.WITHDRAWAL_ENABLED:
-            return list_display
-        return tuple(
-            field for field in list_display if field != "display_withdrawal_policy"
-        )
-
-    def get_list_filter(self, request):
-        list_filter = super().get_list_filter(request)
-        if settings.WITHDRAWAL_ENABLED:
-            return list_filter
-        return tuple(
-            field for field in list_filter if field != "withdrawal_review_required"
-        )
+        return self.edit_fieldsets
 
     add_fieldsets = (
         (
@@ -694,17 +649,6 @@ class ProjectAdmin(ModelAdmin):
                 ),
             },
         ),
-        (
-            _("提币风控"),
-            {
-                "fields": (
-                    "withdrawal_review_required",
-                    "withdrawal_review_exempt_limit",
-                    "withdrawal_single_limit",
-                    "withdrawal_daily_limit",
-                ),
-            },
-        ),
     )
 
     def has_delete_permission(self, request, obj=None):
@@ -720,17 +664,6 @@ class ProjectAdmin(ModelAdmin):
     def display_ready_status(self, instance: Project):
         ready, _ = instance.is_ready
         return "已就绪" if ready else "未就绪"
-
-    @display(description=_("提币风控"))
-    def display_withdrawal_policy(self, instance: Project):
-        # 管理端列表直接展示当前项目提币策略摘要，避免进入详情页后才知道审核和限额设置。
-        review = _("审核") if instance.withdrawal_review_required else _("直发")
-        exempt_limit = instance.withdrawal_review_exempt_limit or "-"
-        single_limit = instance.withdrawal_single_limit or "-"
-        daily_limit = instance.withdrawal_daily_limit or "-"
-        return (
-            f"{review} / 免审:{exempt_limit} / 单笔:{single_limit} / 单日:{daily_limit}"
-        )
 
     @display(description=_("项目热钱包地址"))
     def display_hot_wallet_addresses(self, instance: Project):

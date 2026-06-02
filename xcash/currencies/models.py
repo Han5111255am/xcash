@@ -18,7 +18,7 @@ class PriceUnavailableError(Exception):
     """无法取得某币在指定法币下的价格。
 
     用于把"没有价格源"这一确定的业务态从裸 KeyError 中区分出来：
-    充/提币可据此优雅降级（worth 记 0），支付入口据此把该币排除出可选方式。
+    非支付资产流转可据此优雅降级（worth 记 0），支付入口据此把该币排除出可选方式。
     """
 
 
@@ -36,7 +36,7 @@ class Crypto(models.Model):
     prices = models.JSONField(_("价格"), default=dict, blank=True)
     # CoinGecko 的全局唯一行情 slug（如 tether/binancecoin），与 symbol 无机械对应。
     # 可空：coingecko_id 只是众多取价来源之一（CoinGecko 行情），并非币的身份。未上
-    # CoinGecko 的币（如项目方自定义代币）允许留空——它们仍可充/提币，只是没有法币价格，
+    # CoinGecko 的币（如项目方自定义代币）允许留空——它们仍可用于充币等非支付资产流转，只是没有法币价格，
     # 故不会出现在按法币计价的支付（invoice）选项里（见 is_payable 与支付能力门禁）。
     # NULL 让多条无 slug 的币并存而不撞唯一约束；空串在 save() 中归一为 NULL，避免空串互撞。
     coingecko_id = models.CharField(_("CoinGecko ID"), unique=True, blank=True, null=True)
@@ -116,12 +116,12 @@ class Crypto(models.Model):
         判据是"有没有价格来源"，而非"当前是否已刷到价"：
         - USD 锚定稳定币恒可计价；
         - 配了 coingecko_id 的币由行情任务周期刷新，视为可计价（首次刷新前也算）；
-        - 二者皆无（未上 CoinGecko 的自定义代币）则只能充/提币，不进支付选项。
+        - 二者皆无（未上 CoinGecko 的自定义代币）则只能用于非支付资产流转，不进支付选项。
         """
         return self.symbol in self.USD_PEGGED_SYMBOLS or self.coingecko_id is not None
 
     def usd_amount(self, amount: Decimal) -> Decimal:
-        """将代币数量换算为 USD 价值；无价格源时降级为 0（充/提币不因缺价受阻）。"""
+        """将代币数量换算为 USD 价值；无价格源时降级为 0（非支付资产流转不因缺价受阻）。"""
         try:
             return amount * self.price("USD")
         except PriceUnavailableError:
