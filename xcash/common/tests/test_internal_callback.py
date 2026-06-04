@@ -17,11 +17,13 @@ class InternalCallbackTest(TestCase):
         mock_client = mock_client_cls.return_value.__enter__.return_value
 
         _deliver_internal_callback(
-            event="invoice.confirmed",
-            appid="XC-test",
-            sys_no="INV-001",
-            worth="100.00",
-            currency="USDT",
+            payload={
+                "event": "invoice.confirmed",
+                "appid": "XC-test",
+                "sys_no": "INV-001",
+                "worth": "100.00",
+                "currency": "USDT",
+            }
         )
 
         mock_client.post.assert_called_once()
@@ -40,11 +42,13 @@ class InternalCallbackTest(TestCase):
         from common.internal_callback import _deliver_internal_callback
 
         _deliver_internal_callback(
-            event="invoice.confirmed",
-            appid="XC-test",
-            sys_no="INV-001",
-            worth="100.00",
-            currency="USDT",
+            payload={
+                "event": "invoice.confirmed",
+                "appid": "XC-test",
+                "sys_no": "INV-001",
+                "worth": "100.00",
+                "currency": "USDT",
+            }
         )
 
         mock_client_cls.assert_not_called()
@@ -74,11 +78,80 @@ class InternalCallbackTest(TestCase):
 
         with self.assertRaises(httpx.HTTPStatusError):
             _deliver_internal_callback(
-                event="invoice.confirmed",
+                payload={
+                    "event": "invoice.confirmed",
+                    "appid": "XC-test",
+                    "sys_no": "INV-001",
+                    "worth": "100.00",
+                    "currency": "USDT",
+                }
+            )
+
+    def test_to_payload_emits_type_specific_amount_field(self):
+        from common.internal_callback import CallbackEvent
+        from common.internal_callback import InternalCallback
+
+        # invoice/deposit：带 worth，不带 tx_detail
+        worth_payload = InternalCallback(
+            event=CallbackEvent.INVOICE_CONFIRMED,
+            appid="XC-test",
+            sys_no="INV-001",
+            currency="USDT",
+            worth="100.00",
+        ).to_payload()
+        assert worth_payload["event"] == "invoice.confirmed"  # 序列化为纯字符串
+        assert worth_payload["worth"] == "100.00"
+        assert "tx_detail" not in worth_payload
+        assert "timestamp" in worth_payload
+
+        # gas_fee：带 tx_detail，不带 worth
+        gas_payload = InternalCallback(
+            event=CallbackEvent.GAS_FEE_VAULT_SLOT_DEPLOY,
+            appid="XC-test",
+            sys_no="vault-slot-deploy:1",
+            currency="USDT",
+            tx_detail={"gas_cost": "0.042"},
+        ).to_payload()
+        assert gas_payload["event"] == "gas_fee.vault_slot_deploy.confirmed"
+        assert gas_payload["tx_detail"] == {"gas_cost": "0.042"}
+        assert "worth" not in gas_payload
+
+    def test_invalid_event_value_is_rejected(self):
+        import pytest
+
+        from common.internal_callback import InternalCallback
+
+        with pytest.raises(ValueError):
+            InternalCallback(
+                event="invoice.paid",  # 不在 CallbackEvent 内
                 appid="XC-test",
                 sys_no="INV-001",
-                worth="100.00",
                 currency="USDT",
+                worth="100.00",
+            )
+
+    def test_amount_field_must_match_event_family(self):
+        import pytest
+
+        from common.internal_callback import CallbackEvent
+        from common.internal_callback import InternalCallback
+
+        # invoice/deposit 缺 worth → 报错
+        with pytest.raises(ValueError):
+            InternalCallback(
+                event=CallbackEvent.INVOICE_CONFIRMED,
+                appid="XC-test",
+                sys_no="INV-001",
+                currency="USDT",
+            )
+        # gas_fee 缺 tx_detail（误用 worth）→ 报错
+        with pytest.raises(ValueError):
+            InternalCallback(
+                event=CallbackEvent.GAS_FEE_VAULT_SLOT_DEPLOY,
+                appid="XC-test",
+                sys_no="vault-slot-deploy:1",
+                currency="USDT",
+                worth="0.042",
             )
 
     def test_retry_countdown_is_monotonic_and_capped(self):

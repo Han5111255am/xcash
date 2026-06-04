@@ -489,15 +489,18 @@ class VaultSlotAddressSchedulingTests(TestCase):
             notify_vault_slot_deploy_gas_fee(tx_task=task.base_task)
 
         send_callback_mock.assert_called_once()
-        kwargs = send_callback_mock.call_args.kwargs
-        self.assertEqual(kwargs["event"], "gas_fee.vault_slot_deploy.confirmed")
-        self.assertEqual(kwargs["appid"], self.project.appid)
-        self.assertEqual(kwargs["worth"], "0.042")
-        self.assertEqual(kwargs["currency"], "USDT")
-        self.assertEqual(kwargs["detail_payload"]["tx_hash"], tx_hash)
-        self.assertEqual(kwargs["detail_payload"]["gas_used"], 21000)
-        self.assertEqual(kwargs["detail_payload"]["gas_price"], 1_000_000_000)
-        self.assertEqual(kwargs["detail_payload"]["operation"], "vault_slot_deploy")
+        callback = send_callback_mock.call_args.args[0]
+        self.assertEqual(callback.event, "gas_fee.vault_slot_deploy.confirmed")
+        self.assertEqual(callback.appid, self.project.appid)
+        self.assertEqual(callback.currency, "USDT")
+        self.assertIsNone(callback.worth)
+        tx_detail = callback.tx_detail
+        self.assertEqual(tx_detail["gas_cost"], "0.042")
+        self.assertEqual(tx_detail["tx_hash"], tx_hash)
+        self.assertEqual(tx_detail["chain"], "Ethereum")
+        self.assertEqual(tx_detail["gas_used"], 21000)
+        self.assertEqual(tx_detail["gas_price"], 1_000_000_000)
+        self.assertEqual(tx_detail["native_price"], "2000")
 
     def test_ensure_deposit_address_rejects_project_without_vault(self):
         Project.objects.filter(pk=self.project.pk).update(vault=None)
@@ -900,16 +903,18 @@ class VaultSlotAddressSchedulingTests(TestCase):
             transfer.confirm()
 
         send_callback_mock.assert_called_once()
-        kwargs = send_callback_mock.call_args.kwargs
-        self.assertEqual(kwargs["event"], "gas_fee.vault_slot_collect.confirmed")
-        self.assertEqual(kwargs["appid"], self.project.appid)
-        self.assertEqual(kwargs["worth"], "0.2")
-        self.assertEqual(kwargs["detail_payload"]["tx_hash"], tx_hash)
-        self.assertEqual(kwargs["detail_payload"]["operation"], "vault_slot_collect")
-        self.assertEqual(
-            kwargs["detail_payload"]["collected_crypto"],
-            self.token.symbol,
-        )
+        callback = send_callback_mock.call_args.args[0]
+        self.assertEqual(callback.event, "gas_fee.vault_slot_collect.confirmed")
+        self.assertEqual(callback.appid, self.project.appid)
+        self.assertEqual(callback.currency, "USDT")
+        self.assertIsNone(callback.worth)
+        tx_detail = callback.tx_detail
+        self.assertEqual(tx_detail["gas_cost"], "0.2")
+        self.assertEqual(tx_detail["tx_hash"], tx_hash)
+        self.assertEqual(tx_detail["chain"], "Ethereum")
+        self.assertEqual(tx_detail["gas_used"], 50000)
+        self.assertEqual(tx_detail["gas_price"], 2_000_000_000)
+        self.assertEqual(tx_detail["native_price"], "2000")
 
     def _create_vault_slot(self) -> VaultSlot:
         if self.project.vault is None:

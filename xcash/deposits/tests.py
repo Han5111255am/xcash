@@ -9,6 +9,8 @@ from web3 import Web3
 
 from chains.constants import ChainCode
 from chains.constants import ChainType
+from common.internal_callback import CallbackEvent
+from common.internal_callback import InternalCallback
 from chains.models import Address
 from chains.models import AddressUsage
 from chains.models import Chain
@@ -278,11 +280,13 @@ class DepositNotificationTests(TestCase):
         self.assertEqual(payload["data"]["uid"], customer.uid)
         self.assertTrue(payload["data"]["confirmed"])
         send_internal_callback_mock.assert_called_once_with(
-            event="deposit.confirmed",
-            appid=project.appid,
-            sys_no=deposit.sys_no,
-            worth="1.000000",
-            currency=crypto.symbol,
+            InternalCallback(
+                event=CallbackEvent.DEPOSIT_CONFIRMED,
+                appid=project.appid,
+                sys_no=deposit.sys_no,
+                worth="1.000000",
+                currency=crypto.symbol,
+            )
         )
 
 

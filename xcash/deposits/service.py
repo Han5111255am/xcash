@@ -7,6 +7,8 @@ from django.utils import timezone
 
 from chains.models import Transfer
 from chains.models import TransferType
+from common.internal_callback import CallbackEvent
+from common.internal_callback import InternalCallback
 from common.internal_callback import send_internal_callback
 from common.utils.math import format_decimal_stripped
 from deposits.exceptions import DepositStatusError
@@ -125,11 +127,13 @@ class DepositService:
             logger.exception("调度 VaultSlot 归集任务失败", deposit_id=deposit.pk)
         cls.notify_completed(deposit)
         send_internal_callback(
-            event="deposit.confirmed",
-            appid=deposit.customer.project.appid,
-            sys_no=deposit.sys_no,
-            worth=str(deposit.worth),
-            currency=deposit.transfer.crypto.symbol,
+            InternalCallback(
+                event=CallbackEvent.DEPOSIT_CONFIRMED,
+                appid=deposit.customer.project.appid,
+                sys_no=deposit.sys_no,
+                worth=str(deposit.worth),
+                currency=deposit.transfer.crypto.symbol,
+            )
         )
 
     @staticmethod

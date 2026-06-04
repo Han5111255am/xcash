@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import httpx
 import structlog
 from celery import shared_task
 from django.conf import settings
+from django.db import models
 from django.db import transaction
 from django.utils import timezone
 
@@ -17,19 +20,71 @@ _SAAS_CALLBACK_PATH = "/callbacks/xcash"
 _RETRY_BACKOFF = (8, 60, 300, 600, 1800, 3600)
 
 
+class CallbackEvent(models.TextChoices):
+    """xcash → SaaS 内部回调的事件枚举，限定 event 可选值。
+
+    命名空间即业务大类（invoice.* / deposit.* / gas_fee.*），SaaS 据此路由。
+    """
+
+    INVOICE_CONFIRMED = "invoice.confirmed", "Invoice 确认"
+    DEPOSIT_CONFIRMED = "deposit.confirmed", "Deposit 确认"
+    GAS_FEE_VAULT_SLOT_DEPLOY = (
+        "gas_fee.vault_slot_deploy.confirmed",
+        "Gas 费：VaultSlot 部署",
+    )
+    GAS_FEE_VAULT_SLOT_COLLECT = (
+        "gas_fee.vault_slot_collect.confirmed",
+        "Gas 费：VaultSlot 归集",
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class InternalCallback:
+    """xcash → SaaS 内部回调的统一数据结构（契约的单一定义处）。
+
+    业务大类由 event 命名空间表达（invoice.* / deposit.* / gas_fee.*），SaaS 按 event 路由。
+    金额按 event 大类二选一、且必有其一（由 __post_init__ 强约束，杜绝
+    「两者都为 None / 都给 / 与 event 不匹配」）：
+    - invoice/deposit → worth（成交/充值等值金额）；
+    - gas_fee → tx_detail（链上成本明细，含 gas_cost）。
+    """
+
+    event: CallbackEvent
+    appid: str
+    sys_no: str
+    currency: str
+    worth: str | None = None
+    tx_detail: dict | None = None
+
+    def __post_init__(self) -> None:
+        CallbackEvent(self.event)  # 限定 event 取值，非法值抛 ValueError
+        if str(self.event).startswith("gas_fee."):
+            if self.tx_detail is None or self.worth is not None:
+                raise ValueError("gas_fee 回调必须且只能带 tx_detail")
+        elif self.worth is None or self.tx_detail is not None:
+            raise ValueError(f"{self.event} 回调必须且只能带 worth")
+
+    def to_payload(self) -> dict:
+        """序列化为发往 SaaS 的 JSON body；按约束只会落入一个金额字段。"""
+        payload: dict = {
+            "event": str(self.event),
+            "appid": self.appid,
+            "sys_no": self.sys_no,
+            "currency": self.currency,
+            "timestamp": timezone.now().isoformat(),
+        }
+        if self.worth is not None:
+            payload["worth"] = self.worth
+        if self.tx_detail is not None:
+            payload["tx_detail"] = self.tx_detail
+        return payload
+
+
 def _retry_countdown(retries: int) -> int:
     return _RETRY_BACKOFF[min(retries, len(_RETRY_BACKOFF) - 1)]
 
 
-def send_internal_callback(
-    *,
-    event: str,
-    appid: str,
-    sys_no: str,
-    worth: str,
-    currency: str,
-    detail_payload: dict | None = None,
-) -> None:
+def send_internal_callback(callback: InternalCallback) -> None:
     """
     在事务提交后异步发送内部回调给 SaaS。
     IS_SAAS=False 视为未对接 SaaS，直接跳过（没 token 也过不了 SaaS 的鉴权）。
@@ -38,14 +93,7 @@ def send_internal_callback(
         return
 
     transaction.on_commit(
-        lambda: _deliver_internal_callback.delay(
-            event=event,
-            appid=appid,
-            sys_no=sys_no,
-            worth=worth,
-            currency=currency,
-            detail_payload=detail_payload,
-        )
+        lambda: _deliver_internal_callback.delay(payload=callback.to_payload())
     )
 
 
@@ -58,31 +106,15 @@ def send_internal_callback(
     acks_late=True,
     reject_on_worker_lost=True,
 )
-def _deliver_internal_callback(
-    self,
-    *,
-    event: str,
-    appid: str,
-    sys_no: str,
-    worth: str,
-    currency: str,
-    detail_payload: dict | None = None,
-) -> None:
-    """Celery task：向 SaaS 发送内部回调 POST 请求。"""
+def _deliver_internal_callback(self, *, payload: dict) -> None:
+    """Celery task：向 SaaS 发送内部回调 POST 请求。
+
+    入参是已序列化好的 payload（InternalCallback.to_payload()），保持 JSON 可序列化，
+    兼容 broker 里的在途消息。
+    """
     if not settings.IS_SAAS:
         return
     url = f"{settings.SAAS_CALLBACK_URL.rstrip('/')}{_SAAS_CALLBACK_PATH}"
-
-    payload = {
-        "event": event,
-        "appid": appid,
-        "sys_no": sys_no,
-        "worth": worth,
-        "currency": currency,
-        "timestamp": timezone.now().isoformat(),
-    }
-    if detail_payload:
-        payload["payload"] = detail_payload
 
     try:
         with httpx.Client(timeout=10) as client:
@@ -99,9 +131,9 @@ def _deliver_internal_callback(
         logger.warning(
             "internal_callback_failed",
             url=url,
-            callback_event=event,
-            appid=appid,
-            sys_no=sys_no,
+            callback_event=payload.get("event"),
+            appid=payload.get("appid"),
+            sys_no=payload.get("sys_no"),
             error=str(exc),
             retry=self.request.retries,  # noqa
         )

@@ -16,6 +16,8 @@ from chains.service import ChainService
 from chains.service import TransferService
 from common.error_codes import ErrorCode
 from common.exceptions import APIError
+from common.internal_callback import CallbackEvent
+from common.internal_callback import InternalCallback
 from common.internal_callback import send_internal_callback
 from common.utils.math import format_decimal_stripped
 from currencies.service import CryptoService
@@ -387,11 +389,13 @@ class InvoiceService:
         # 账单状态机在 COMPLETED 即为终局，无需后续财务核算步骤。
 
         send_internal_callback(
-            event="invoice.confirmed",
-            appid=invoice.project.appid,
-            sys_no=invoice.sys_no,
-            worth=str(invoice.worth),
-            currency=invoice.crypto.symbol,
+            InternalCallback(
+                event=CallbackEvent.INVOICE_CONFIRMED,
+                appid=invoice.project.appid,
+                sys_no=invoice.sys_no,
+                worth=str(invoice.worth),
+                currency=invoice.crypto.symbol,
+            )
         )
 
     @classmethod
