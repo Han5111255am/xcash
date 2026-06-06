@@ -86,7 +86,7 @@ class Project(models.Model):
     invoice_receiving_mode = models.CharField(
         _("账单收款模式"),
         choices=InvoiceReceivingMode,
-        default=InvoiceReceivingMode.VaultSlot,
+        default=InvoiceReceivingMode.Differ,
         help_text=_("全局控制账单生成支付地址时使用 VaultSlot 还是差额收款地址。"),
     )
 
