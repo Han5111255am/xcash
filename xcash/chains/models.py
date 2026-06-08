@@ -1311,8 +1311,6 @@ class Transfer(models.Model):
         self.status = TransferStatus.CONFIRMED
         # Transfer 状态推进不依赖 post_save 更新逻辑，直接 update 可减少并发覆盖面。
         Transfer.objects.filter(pk=self.pk).update(status=TransferStatus.CONFIRMED)
-        # 统一父任务在链上成功后进入稳定终局；业务层不需要感知广播细节。
-        TxTask.mark_finalized_success(chain=self.chain, tx_hash=self.hash)
         self._mark_vault_slot_received()
         self._refresh_vault_slot_balances()
 
@@ -1320,7 +1318,7 @@ class Transfer(models.Model):
 
     @db_transaction.atomic
     def drop(self):
-        """回退关联业务状态，然后删除 Transfer 记录。
+        """删除 Transfer 记录。
 
         删除记录以释放唯一约束 (chain, hash),
         使 reorg 后同一笔 tx 被重新打包时, 扫描器可以自然重建 Transfer。
@@ -1329,8 +1327,6 @@ class Transfer(models.Model):
         if not Transfer.objects.select_for_update().filter(pk=self.pk).exists():
             return
         self.refresh_from_db()
-
-        self._dispatch_business_drop()
 
         self.delete()
 
@@ -1382,6 +1378,3 @@ class Transfer(models.Model):
         )
 
         refresh_vault_slot_balance_for_transfer(self)
-
-    def _dispatch_business_drop(self) -> None:
-        """统一按已归类的业务类型分发回退动作，drop() 专用。"""
