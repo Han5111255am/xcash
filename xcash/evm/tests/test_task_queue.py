@@ -97,7 +97,7 @@ class EvmTaskQueueTests(TestCase):
                 chain=self.chain,
                 sender=address,
                 tx_type=TxTaskType.VaultSlotCollect,
-                status=TxTaskStatus.CONFIRMED,
+                status=TxTaskStatus.SUCCEEDED,
             )
             EvmTxTask.objects.create(
                 base_task=filler_base,
@@ -120,7 +120,7 @@ class EvmTaskQueueTests(TestCase):
 
         tx_task = self._create_evm_task(
             tx_hash="0x" + "a" * 64,
-            status=TxTaskStatus.CONFIRMED,
+            status=TxTaskStatus.SUCCEEDED,
         )
 
         _broadcast_evm_task.run(tx_task.pk)
@@ -178,7 +178,7 @@ class EvmTaskQueueTests(TestCase):
         )
         finalized_task = self._create_evm_task(
             tx_hash="0x" + "e" * 64,
-            status=TxTaskStatus.CONFIRMED,
+            status=TxTaskStatus.SUCCEEDED,
         )
 
         stale_created_at = timezone.now() - timedelta(seconds=8)
@@ -500,7 +500,7 @@ class EvmTaskQueueTests(TestCase):
         # 模拟一笔完成，腾出 pipeline 空位
         first = submitted_tasks[0]
         TxTask.objects.filter(pk=first.base_task_id).update(
-            status=TxTaskStatus.CONFIRMED,
+            status=TxTaskStatus.SUCCEEDED,
         )
 
         _broadcast_evm_task.run(next_task.pk)

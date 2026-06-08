@@ -207,7 +207,7 @@ def schedule_deploy(slot_pk: int) -> TxTask | None:
             and deploy_task.status not in TERMINAL_TX_TASK_STATUSES
         ):
             return deploy_task
-        if deploy_task is not None and deploy_task.status == TxTaskStatus.CONFIRMED:
+        if deploy_task is not None and deploy_task.status == TxTaskStatus.SUCCEEDED:
             return deploy_task
 
         if not slot.project.vault:

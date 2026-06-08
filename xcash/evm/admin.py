@@ -37,7 +37,7 @@ class EvmTxTaskAdmin(ReadOnlyModelAdmin):
         label={
             "待提交": "warning",
             "已提交，待链上结果": "warning",
-            "已确认": "success",
+            "成功": "success",
             "失败": "danger",
         },
     )

@@ -466,7 +466,7 @@ class VaultSlotAddressSchedulingTests(TestCase):
 
         with address_patch:
             existing_task = VaultSlot.schedule_deploy(slot.pk)
-        existing_task.status = TxTaskStatus.CONFIRMED
+        existing_task.status = TxTaskStatus.SUCCEEDED
         existing_task.save(update_fields=["status", "updated_at"])
         VaultSlot.objects.filter(pk=slot.pk).update(is_deployed=True)
 
@@ -546,7 +546,7 @@ class VaultSlotAddressSchedulingTests(TestCase):
 
         task.refresh_from_db()
         slot.refresh_from_db()
-        self.assertEqual(task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(task.status, TxTaskStatus.SUCCEEDED)
         self.assertTrue(slot.is_deployed)
         notify_gas_fee.assert_called_once()
         self.assertEqual(notify_gas_fee.call_args.kwargs["tx_task"].pk, task.pk)
@@ -627,7 +627,7 @@ class VaultSlotAddressSchedulingTests(TestCase):
 
         self.assertTrue(processed)
         task.refresh_from_db()
-        self.assertEqual(task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(task.status, TxTaskStatus.SUCCEEDED)
         self.assertEqual(Transfer.objects.count(), transfer_count)
         refresh_balance.assert_called_once()
         self.assertEqual(refresh_balance.call_args.args[0].pk, task.pk)

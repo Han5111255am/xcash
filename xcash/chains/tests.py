@@ -753,7 +753,7 @@ class TxTaskTransitionTests(TestCase):
         self.assertEqual(self.task.status, TxTaskStatus.SUBMITTED)
 
     def test_mark_submitted_does_not_override_terminal_state(self):
-        self.task.status = TxTaskStatus.CONFIRMED
+        self.task.status = TxTaskStatus.SUCCEEDED
         self.task.save(update_fields=["status"])
 
         updated = TxTask.mark_submitted(
@@ -763,7 +763,7 @@ class TxTaskTransitionTests(TestCase):
 
         self.assertFalse(updated)
         self.task.refresh_from_db()
-        self.assertEqual(self.task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(self.task.status, TxTaskStatus.SUCCEEDED)
 
     def test_mark_finalized_success_transitions_correctly(self):
         updated = TxTask.mark_finalized_success(
@@ -771,7 +771,7 @@ class TxTaskTransitionTests(TestCase):
         )
         self.assertTrue(updated)
         self.task.refresh_from_db()
-        self.assertEqual(self.task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(self.task.status, TxTaskStatus.SUCCEEDED)
 
     def test_mark_finalized_success_can_resolve_old_hash(self):
         old_hash = self.task.tx_hash
@@ -785,7 +785,7 @@ class TxTaskTransitionTests(TestCase):
 
         self.assertTrue(updated)
         self.task.refresh_from_db()
-        self.assertEqual(self.task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(self.task.status, TxTaskStatus.SUCCEEDED)
         self.assertEqual(self.task.tx_hash, old_hash)
 
     def test_mark_finalized_failed_transitions_correctly(self):
@@ -832,7 +832,7 @@ class TxTaskTransitionTests(TestCase):
 
         self.assertFalse(updated)
         self.task.refresh_from_db()
-        self.assertEqual(self.task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(self.task.status, TxTaskStatus.SUCCEEDED)
 
 
 class VaultSlotReceivedFlagTests(TestCase):

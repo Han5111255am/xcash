@@ -80,7 +80,7 @@ def dispatch_tron_tx_tasks() -> None:
 
 
 def notify_gas_fee_for_receipt_task(task: TxTask) -> None:
-    """按任务类型把已确认终局的链上成本回调给 SaaS 计费。"""
+    """按任务类型把成功终局的链上成本回调给 SaaS 计费。"""
     if task.tx_type == TxTaskType.VaultSlotDeploy:
         notify_vault_slot_deploy_gas_fee(tx_task=task)
     elif task.tx_type == TxTaskType.VaultSlotCollect:

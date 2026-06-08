@@ -500,14 +500,14 @@ class TransferType(models.TextChoices):
 class TxTaskStatus(models.TextChoices):
     QUEUED = "queued", _("待提交")
     SUBMITTED = "submitted", _("已提交，待链上结果")
-    CONFIRMED = "confirmed", _("已确认")
+    SUCCEEDED = "succeeded", _("成功")
     FAILED = "failed", _("失败")
 
 
-# 终局状态集合：链上交易已得出确定结果（成功确认或永久失败），不再推进。
+# 终局状态集合：链上交易已得出确定执行结果（成功或永久失败），不再推进。
 # 区块链上链周期是固定的线性流程 + 末端分叉，因此用单枚举表达，
 # 终局态用该集合判定，避免再维护 stage/success 两字段的跨字段不变式。
-TERMINAL_TX_TASK_STATUSES = frozenset({TxTaskStatus.CONFIRMED, TxTaskStatus.FAILED})
+TERMINAL_TX_TASK_STATUSES = frozenset({TxTaskStatus.SUCCEEDED, TxTaskStatus.FAILED})
 
 
 class TxHash(models.Model):
@@ -557,7 +557,7 @@ class TxTask(UndeletableModel):
     """跨链统一的链上任务锚点。
 
     设计原则：
-    - status 用单枚举描述上链生命周期：待提交 → 已提交，待链上结果 →（已确认 | 失败）。
+    - status 用单枚举描述上链生命周期：待提交 → 已提交，待链上结果 →（成功 | 失败）。
       上链周期是固定的线性流程加末端成功/失败分叉，故无需把"阶段"与"结果"
       拆成两个字段再用跨字段约束维持一致；终局态由 TERMINAL_TX_TASK_STATUSES 判定。
     - 广播重试等实现细节继续留在各链子表，避免把"是否广播"污染到统一领域模型。
@@ -685,7 +685,7 @@ class TxTask(UndeletableModel):
 
     @staticmethod
     def mark_finalized_success(*, chain: Chain, tx_hash: str) -> bool:
-        """将匹配的任务标记为已确认终局，返回是否真正发生了状态推进。
+        """将匹配的任务标记为成功终局，返回是否真正发生了状态推进。
 
         使用 .update() 绕过 save()/full_clean() 以避免逐行加载；
         排除已处于终局态的任务，保证终局幂等且不被覆盖。
@@ -701,7 +701,7 @@ class TxTask(UndeletableModel):
             .exclude(status__in=TERMINAL_TX_TASK_STATUSES)
             .update(
                 tx_hash=tx_hash,
-                status=TxTaskStatus.CONFIRMED,
+                status=TxTaskStatus.SUCCEEDED,
                 updated_at=timezone.now(),
             )
         )
@@ -1311,7 +1311,7 @@ class Transfer(models.Model):
         self.status = TransferStatus.CONFIRMED
         # Transfer 状态推进不依赖 post_save 更新逻辑，直接 update 可减少并发覆盖面。
         Transfer.objects.filter(pk=self.pk).update(status=TransferStatus.CONFIRMED)
-        # 统一父任务在确认后进入稳定成功终局；业务层不需要感知广播细节。
+        # 统一父任务在链上成功后进入稳定终局；业务层不需要感知广播细节。
         TxTask.mark_finalized_success(chain=self.chain, tx_hash=self.hash)
         self._mark_vault_slot_received()
         self._refresh_vault_slot_balances()

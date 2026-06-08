@@ -1314,7 +1314,7 @@ class TronReceiptConfirmTaskTests(TestCase):
         confirm_tron_receipt_tx_tasks()
 
         base_task.refresh_from_db()
-        self.assertEqual(base_task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(base_task.status, TxTaskStatus.SUCCEEDED)
         refresh_balance.assert_called_once()
         self.assertEqual(refresh_balance.call_args.args[0].pk, base_task.pk)
         collect_gas_fee.assert_called_once()
@@ -1347,7 +1347,7 @@ class TronReceiptConfirmTaskTests(TestCase):
 
         base_task.refresh_from_db()
         self.slot.refresh_from_db()
-        self.assertEqual(base_task.status, TxTaskStatus.CONFIRMED)
+        self.assertEqual(base_task.status, TxTaskStatus.SUCCEEDED)
         self.assertTrue(self.slot.is_deployed)
         refresh_balance.assert_not_called()
         deploy_gas_fee.assert_called_once()

@@ -255,7 +255,7 @@ class EvmChainScannerServiceTests(TestCase):
                 chain=chain,
                 sender=addr,
                 tx_type=TxTaskType.VaultSlotCollect,
-                status=TxTaskStatus.CONFIRMED,
+                status=TxTaskStatus.SUCCEEDED,
             )
             EvmTxTask.objects.create(
                 base_task=filler_base,
