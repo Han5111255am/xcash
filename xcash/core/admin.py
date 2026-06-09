@@ -4,11 +4,8 @@ from django.contrib import admin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
 from django.urls import reverse
-from django.utils.html import format_html
-from django.utils.html import format_html_join
 from django.utils.translation import gettext_lazy as _
 from django_celery_results.models import TaskResult
-from unfold.decorators import display
 
 from chains.models import AddressUsage
 from chains.models import Chain
@@ -131,23 +128,10 @@ class SystemSettingsAdmin(ModelAdmin):
 
 @admin.register(SystemWallet)
 class SystemWalletAdmin(ModelAdmin):
-    fieldsets = (
-        (
-            None,
-            {
-                "fields": (
-                    "display_system_wallet_note",
-                    "display_wallet_address",
-                    "display_chain_balances",
-                )
-            },
-        ),
-    )
-    readonly_fields = (
-        "display_system_wallet_note",
-        "display_wallet_address",
-        "display_chain_balances",
-    )
+    # 系统热钱包页是只读的基础设施概览，用专属模板渲染地址与各链余额仪表盘。
+    change_form_template = "admin/core/systemwallet/change_form.html"
+    # 页面不暴露任何可编辑字段，给一组空 fieldset 让 admin 表单机制安全空转。
+    fieldsets = ((None, {"fields": ()}),)
     list_display = ("id", "wallet", "updated_at")
 
     def has_module_permission(self, request):
@@ -174,120 +158,87 @@ class SystemWalletAdmin(ModelAdmin):
             reverse("admin:core_systemwallet_change", args=[system_wallet.pk])
         )
 
-    @display(description=_("说明"))
-    def display_system_wallet_note(self, instance: SystemWallet):
-        return format_html(
-            '<div class="max-w-3xl text-sm leading-6 text-base-600 dark:text-base-400">'
-            "<p>{}</p>"
-            '<p class="mt-2 font-medium text-amber-700 dark:text-amber-300">{}</p>'
-            "</div>",
-            _(
-                "系统热钱包用于平台基础设施交易，例如 VaultSlot 合约部署、"
-                "VaultSlot 归集等需要由系统主动发起的链上操作。"
-            ),
-            _(
-                "这里只需要保留覆盖近期操作的小额 Gas，"
-                "不要存入过多原生币，也不要把它作为业务资金归集地址。"
-            ),
-        )
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        instance = self.get_object(request, object_id)
+        extra_context = {
+            **(extra_context or {}),
+            # 把地址派生与各链余额查询的结果整理成结构化数据交给模板渲染，
+            # 视图层只负责取数与异常归一，展示完全交由模板控制。
+            "wallet_overview": self.build_wallet_overview(instance),
+        }
+        return super().change_view(request, object_id, form_url, extra_context)
 
-    @display(description=_("钱包地址"))
-    def display_wallet_address(self, instance: SystemWallet):
-        rows = []
-        for chain_type in (ChainType.EVM, ChainType.TRON):
+    def build_wallet_overview(self, instance: SystemWallet | None) -> dict | None:
+        if instance is None:
+            return None
+
+        # 钱包地址按链类型分卡展示：EVM 全链共用同一地址，Tron 独立一份。
+        address_cards = []
+        for chain_type, icon in (
+            (ChainType.EVM, "hub"),
+            (ChainType.TRON, "bolt"),
+        ):
             address, error = self.resolve_chain_type_address(instance, chain_type)
-            rows.append(
-                (
-                    chain_type.label,
-                    error
-                    if error
-                    else format_html(
-                        '<span class="font-mono break-all">{}</span>',
-                        address or "-",
-                    ),
-                )
+            address_cards.append(
+                {
+                    "label": chain_type.label,
+                    "icon": icon,
+                    "address": address,
+                    "error": error,
+                }
             )
 
-        body = format_html_join(
-            "",
-            (
-                "<tr>"
-                '<td class="px-3 py-2 font-medium whitespace-nowrap">{}</td>'
-                '<td class="px-3 py-2">{}</td>'
-                "</tr>"
-            ),
-            rows,
-        )
-        return format_html(
-            '<div class="overflow-auto">'
-            '<table class="w-auto min-w-[520px] divide-y divide-base-200 text-sm">'
-            "<thead>"
-            "<tr>"
-            '<th class="px-3 py-2 text-left">{}</th>'
-            '<th class="px-3 py-2 text-left">{}</th>'
-            "</tr>"
-            "</thead>"
-            "<tbody>{}</tbody>"
-            "</table>"
-            "</div>",
-            _("链类型"),
-            _("地址"),
-            body,
-        )
-
-    @display(description=_("各链余额"))
-    def display_chain_balances(self, instance: SystemWallet):
-        rows = self.build_chain_balance_rows(instance)
-        if not rows:
-            return _("暂无启用的 EVM 链")
-
-        body = format_html_join(
-            "",
-            (
-                "<tr>"
-                '<td class="px-3 py-2 font-medium whitespace-nowrap">{}</td>'
-                '<td class="px-3 py-2 whitespace-nowrap">{}</td>'
-                "</tr>"
-            ),
-            rows,
-        )
-        return format_html(
-            '<div class="overflow-auto">'
-            '<table class="w-auto min-w-[480px] divide-y divide-base-200 text-sm">'
-            "<thead>"
-            "<tr>"
-            '<th class="px-3 py-2 text-left">{}</th>'
-            '<th class="px-3 py-2 text-left">{}</th>'
-            "</tr>"
-            "</thead>"
-            "<tbody>{}</tbody>"
-            "</table>"
-            "</div>",
-            _("链"),
-            _("余额"),
-            body,
-        )
-
-    def build_chain_balance_rows(self, instance: SystemWallet):
-        rows = []
-        address, address_error = self.resolve_chain_type_address(
+        # 余额只覆盖启用的 EVM 链：Tron 原生币余额查询当前有意推迟，不在此展示。
+        evm_address, evm_error = self.resolve_chain_type_address(
             instance, ChainType.EVM
         )
-        for chain in Chain.objects.filter(type=ChainType.EVM, active=True).order_by(
-            "code"
-        ):
-            balance = (
-                address_error
-                if address_error
-                else self.resolve_native_balance(chain=chain, address=address)
-            )
-            rows.append(
-                (
-                    chain.name,
-                    balance,
-                )
-            )
-        return rows
+        balance_rows = [
+            self.build_balance_row(chain, evm_address, evm_error)
+            for chain in Chain.objects.filter(
+                type=ChainType.EVM, active=True
+            ).order_by("code")
+        ]
+        return {
+            "address_cards": address_cards,
+            "balance_rows": balance_rows,
+            # EVM 地址整体派生失败时，余额区直接展示同一错误横幅，不再逐链重复。
+            "balance_error": evm_error,
+            "has_evm_chains": bool(balance_rows),
+        }
+
+    def build_balance_row(
+        self, chain: Chain, address: str | None, address_error: str | None
+    ) -> dict:
+        """把单条 EVM 链的原生币余额查询结果归一成模板可直接渲染的结构。
+
+        status 取值：ok（查到余额）、no_rpc（未配置 RPC）、unsupported（适配器不支持）、
+        error（地址派生或链上查询异常）。note 承载非 ok 状态下的提示文案。
+        """
+        row = {
+            "name": chain.name,
+            "symbol": chain.spec.native_coin_symbol,
+            "is_testnet": chain.is_testnet,
+            "balance": None,
+            "status": "ok",
+            "note": None,
+        }
+        if address_error:
+            return {**row, "status": "error", "note": address_error}
+        if not chain.rpc:
+            return {**row, "status": "no_rpc", "note": _("RPC 未配置")}
+        try:
+            raw_balance = chain.adapter.get_balance(address, chain, chain.native_coin)
+        except NotImplementedError:
+            return {**row, "status": "unsupported", "note": _("暂不支持查询")}
+        except Exception as exc:  # noqa: BLE001
+            return {**row, "status": "error", "note": _("查询失败：%(err)s") % {"err": exc}}
+
+        decimals = self.resolve_native_decimals(chain)
+        amount = Decimal(raw_balance).scaleb(-decimals)
+        row["balance"] = format_decimal_stripped(amount)
+        return row
 
     def resolve_chain_type_address(
         self, instance: SystemWallet, chain_type: ChainType
@@ -300,22 +251,6 @@ class SystemWalletAdmin(ModelAdmin):
         except RuntimeError as exc:
             return None, _("地址派生失败：%(err)s") % {"err": exc}
         return address.address, None
-
-    def resolve_native_balance(self, *, chain: Chain, address: str | None) -> str:
-        if not address:
-            return "-"
-        if not chain.rpc:
-            return _("未查询（RPC 未配置）")
-        try:
-            raw_balance = chain.adapter.get_balance(address, chain, chain.native_coin)
-        except NotImplementedError:
-            return _("暂不支持查询")
-        except Exception as exc:  # noqa: BLE001
-            return _("查询失败：%(err)s") % {"err": exc}
-
-        decimals = self.resolve_native_decimals(chain)
-        amount = Decimal(raw_balance).scaleb(-decimals)
-        return f"{format_decimal_stripped(amount)} {chain.spec.native_coin_symbol}"
 
     def resolve_native_decimals(self, chain: Chain) -> int:
         try:
