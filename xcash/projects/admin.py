@@ -40,6 +40,7 @@ class ProjectForm(forms.ModelForm):
             "hmac_key",
             "evm_vault",
             "tron_vault",
+            "invoice_receiving_mode",
             "evm_invoice_receiving_mode",
             "tron_invoice_receiving_mode",
             "active",
@@ -288,6 +289,7 @@ class ProjectAdmin(ModelAdmin):
                 "fields": (
                     "evm_vault",
                     "tron_vault",
+                    "invoice_receiving_mode",
                     "evm_invoice_receiving_mode",
                     "tron_invoice_receiving_mode",
                 ),

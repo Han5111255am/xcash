@@ -35,8 +35,9 @@ class ProjectUpdateSerializer(serializers.ModelSerializer):
             "hmac_key",
             "ip_white_list",
             "fast_confirm_threshold",
-            # 按链类型的账单收款模式，商户可自助切换；切换只影响后续新账单的地址分配，
+            # 账单收款模式：全局 + 按链覆盖。商户可自助切换；切换只影响后续新账单的地址分配，
             # 不动已存在账单。choices 校验由 ModelSerializer 从模型字段自动派生。
+            "invoice_receiving_mode",
             "evm_invoice_receiving_mode",
             "tron_invoice_receiving_mode",
         ]
@@ -119,6 +120,7 @@ class ProjectDetailSerializer(serializers.ModelSerializer):
             "ip_white_list",
             "hmac_key",
             "fast_confirm_threshold",
+            "invoice_receiving_mode",
             "evm_invoice_receiving_mode",
             "tron_invoice_receiving_mode",
             "evm_vault_address",

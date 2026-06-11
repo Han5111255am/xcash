@@ -87,25 +87,33 @@ class Project(models.Model):
         ),
         unique=True,
     )
-    # 账单收款模式按链类型分开：EVM gas 便宜，默认 VaultSlot 合约归集（解锁原生币、并发更高）；
-    # Tron 归集成本高，默认差额收款（零归集成本，且能观测 EOA 收原生 TRX）。
-    evm_invoice_receiving_mode = models.CharField(
-        _("EVM 账单收款模式"),
-        choices=InvoiceReceivingMode,
-        default=InvoiceReceivingMode.VaultSlot,
-        help_text=_(
-            "EVM 链账单收款生成收款地址时使用 VaultSlot 合约归集还是差额收款地址。"
-            "EVM gas 便宜，默认 VaultSlot。"
-        ),
-    )
-    tron_invoice_receiving_mode = models.CharField(
-        _("Tron 账单收款模式"),
+    # 账单收款模式：全局兜底 + 按链可选覆盖。
+    # 商户在 SaaS 只配全局 invoice_receiving_mode（单一认知维度）；引擎保留按链覆盖能力
+    # （epay 等非 SaaS 消费者可用，未来也可放开"按网络单独配"）。专属字段留空即继承全局。
+    invoice_receiving_mode = models.CharField(
+        _("账单收款模式"),
         choices=InvoiceReceivingMode,
         default=InvoiceReceivingMode.Differ,
         help_text=_(
-            "Tron 链账单收款生成收款地址时使用 VaultSlot 合约归集还是差额收款地址。"
-            "Tron 归集成本高，默认差额收款。"
+            "项目级全局账单收款模式；某条链未单独设置覆盖时继承此模式。"
+            "差额收款零归集成本，作为默认。"
         ),
+    )
+    evm_invoice_receiving_mode = models.CharField(
+        _("EVM 账单收款模式覆盖"),
+        choices=InvoiceReceivingMode,
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_("仅覆盖 EVM 链；留空则继承全局账单收款模式。"),
+    )
+    tron_invoice_receiving_mode = models.CharField(
+        _("Tron 账单收款模式覆盖"),
+        choices=InvoiceReceivingMode,
+        null=True,
+        blank=True,
+        default=None,
+        help_text=_("仅覆盖 Tron 链；留空则继承全局账单收款模式。"),
     )
 
     active = models.BooleanField(verbose_name=_("启用"), default=True)
@@ -194,6 +202,25 @@ class Project(models.Model):
     def vault_address_for_chain_type(self, chain_type: ChainType | str) -> str | None:
         return getattr(self, self.vault_field_for_chain_type(chain_type))
 
+    @staticmethod
+    def invoice_receiving_mode_field_for_chain_type(
+        chain_type: ChainType | str,
+    ) -> str | None:
+        """返回某链类型的账单收款模式覆盖字段名；未知链类型返回 None（继承全局）。"""
+        return {
+            ChainType.EVM: "evm_invoice_receiving_mode",
+            ChainType.TRON: "tron_invoice_receiving_mode",
+        }.get(chain_type)
+
+    def resolved_invoice_receiving_mode(self, chain_type: ChainType | str) -> str:
+        """该链类型实际生效的账单收款模式：按链覆盖优先，留空则继承全局。
+
+        全局 invoice_receiving_mode 为 NOT NULL，故任何链（含未来新链）都有确定模式。
+        """
+        field = self.invoice_receiving_mode_field_for_chain_type(chain_type)
+        override = getattr(self, field) if field else None
+        return override or self.invoice_receiving_mode
+
     @classmethod
     def retrieve(cls, appid: str):
         try:
@@ -206,12 +233,14 @@ class Project(models.Model):
         # 错误项采用统一的"短名词 + 状态"格式，便于前端横排拼接。
         errors: list[str] = []
         if (
-            self.evm_invoice_receiving_mode == InvoiceReceivingMode.VaultSlot
+            self.resolved_invoice_receiving_mode(ChainType.EVM)
+            == InvoiceReceivingMode.VaultSlot
             and not self.evm_vault
         ):
             errors.append(_("EVM 金库地址未配置"))  # noqa
         if (
-            self.tron_invoice_receiving_mode == InvoiceReceivingMode.VaultSlot
+            self.resolved_invoice_receiving_mode(ChainType.TRON)
+            == InvoiceReceivingMode.VaultSlot
             and not self.tron_vault
         ):
             errors.append(_("Tron 金库地址未配置"))  # noqa
