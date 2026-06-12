@@ -13,8 +13,11 @@ from .service import EpaySubmitService
 logger = structlog.get_logger()
 
 
-def _epay_submit_rate(_group, _request):
+def _epay_submit_rate(*_args):
     # 把 rate 包成 callable，让测试可以通过 override_settings(EPAY_SUBMIT_RATE_LIMIT=...) 调阈值。
+    # django-smart-ratelimit 不同版本对 rate 回调的入参不一致：旧版按 (group, request)
+    # 两参调用，4.12.x 改为单参 (request)。用 *_args 吞掉位置参数，兼容两种调用约定，
+    # 避免依赖升级后出现 "missing/extra positional argument" 的签名漂移。
     return getattr(settings, "EPAY_SUBMIT_RATE_LIMIT", "60/m")
 
 
