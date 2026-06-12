@@ -130,6 +130,7 @@ class EvmLogScannerTests(TestCase):
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("evm.scanner.logs.EvmScannerRpcClient.get_transaction")
+    @patch("evm.scanner.logs.EvmScannerRpcClient.get_transaction_receipt")
     @patch("evm.scanner.logs.EvmScannerRpcClient.get_block_timestamp")
     @patch("evm.scanner.logs.EvmScannerRpcClient.get_logs")
     @patch("evm.scanner.logs.EvmScannerRpcClient.get_latest_block_number")
@@ -138,6 +139,7 @@ class EvmLogScannerTests(TestCase):
         get_latest_block_number_mock,
         get_logs_mock,
         get_block_timestamp_mock,
+        get_transaction_receipt_mock,
         get_transaction_mock,
         _enqueue_processing_mock,
     ):
@@ -147,7 +149,13 @@ class EvmLogScannerTests(TestCase):
             "0x" + "12" * 32: {"to": self.slot.address},
             "0x" + "23" * 32: {"to": self.token_on_chain.address},
         }[tx_hash]
-        get_logs_mock.side_effect = [[self._native_log()], [self._erc20_log()]]
+        native_log = self._native_log()
+        erc20_log = self._erc20_log()
+        get_transaction_receipt_mock.side_effect = lambda *, tx_hash: {
+            "0x" + "12" * 32: {"logs": [native_log]},
+            "0x" + "23" * 32: {"logs": [erc20_log]},
+        }[tx_hash]
+        get_logs_mock.side_effect = [[native_log], [erc20_log]]
 
         result = EvmLogScanner.scan_chain(chain=self.chain, batch_size=32)
 
