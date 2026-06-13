@@ -87,7 +87,11 @@ def ensure_deposit_address(
         usage=VaultSlotUsage.DEPOSIT,
         customer=customer,
     )
-    slot_address = backend.predict_address(vault=vault_address, salt=salt)
+    slot_address = backend.predict_address(
+        chain=chain,
+        vault=vault_address,
+        salt=salt,
+    )
     try:
         slot, created = VaultSlot.objects.get_or_create(
             chain=chain,
@@ -154,7 +158,11 @@ def ensure_invoice_address(
         project_id=project.pk,
         invoice_index=invoice_index,
     )
-    slot_address = backend.predict_address(vault=vault_address, salt=salt)
+    slot_address = backend.predict_address(
+        chain=chain,
+        vault=vault_address,
+        salt=salt,
+    )
     try:
         slot, created = VaultSlot.objects.get_or_create(
             chain=chain,

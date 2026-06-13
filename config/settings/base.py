@@ -68,8 +68,6 @@ DEFAULT_SUPERUSER_PASSWORD = env.str(
 # 加密入库，密钥取自该高熵主密钥。生产环境必须显式配置（chains.checks 在 check 阶段拦截缺失）。
 WALLET_MNEMONIC_ENCRYPTION_KEY = env.str("WALLET_MNEMONIC_ENCRYPTION_KEY", default="")
 TRON_RPC_TIMEOUT = 8.0
-TRON_VAULT_SLOT_FACTORY_ADDRESS = env.str("TRON_VAULT_SLOT_FACTORY_ADDRESS", default="")
-TRON_VAULT_SLOT_TEMPLATE_ADDRESS = env.str("TRON_VAULT_SLOT_TEMPLATE_ADDRESS", default="")
 # 广播前必须能证明本次合约调用可完全由资源覆盖；估算值乘以安全边际后再与
 # EnergyLimit - EnergyUsed 比较，避免动态 Energy 模型波动导致 fallback 燃烧 TRX。
 TRON_RESOURCE_SAFETY_MARGIN_BPS = env.int(
@@ -78,16 +76,6 @@ TRON_RESOURCE_SAFETY_MARGIN_BPS = env.int(
 )
 # 带宽不足同样会燃烧 TRX；签名后用 JSON 载荷长度做保守估算，再额外预留固定字节。
 TRON_BANDWIDTH_SAFETY_BYTES = env.int("TRON_BANDWIDTH_SAFETY_BYTES", default=512)
-# 归集(collect)的 fee_limit。归集是 TRC20 转账 + 双次余额校验,能耗量级与部署不同。
-TRON_VAULT_SLOT_FEE_LIMIT = env.int("TRON_VAULT_SLOT_FEE_LIMIT", default=0)
-# 部署(deploy)的 fee_limit,独立于归集配置。部署是 CREATE2 克隆,通常能耗更高;
-# 若与归集共用一个上限,按归集量级配会让部署 OUT_OF_ENERGY 并烧掉封顶 TRX、slot
-# 永不成合约,后续归集打到无 code 地址变成 no-op,充值资金停在 CREATE2 地址需人工补救。
-TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT = env.int("TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT", default=0)
-TRON_VAULT_SLOT_NILE_VERIFIED = env.bool(
-    "TRON_VAULT_SLOT_NILE_VERIFIED",
-    default=False,
-)
 
 # 只有当 TCP 对端本身属于受信代理网段时，才接受其转发的 X-Real-IP。
 # 默认留空，生产环境必须显式配置，例如 127.0.0.1、::1 或反向代理容器网段。

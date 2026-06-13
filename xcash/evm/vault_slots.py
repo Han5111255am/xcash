@@ -9,7 +9,6 @@ from chains.models import TxTask
 from chains.models import VaultSlot
 from core.models import SystemWallet
 from evm.adapter import EvmAdapter
-from evm.constants import XCASH_VAULT_SLOT_FACTORY_ADDRESS
 from evm.contracts_codec import predict_xcash_vault_slot_address
 from evm.intents import build_vault_slot_collect_intent
 from evm.intents import build_vault_slot_deploy_intent
@@ -28,8 +27,14 @@ def collect_token_address(*, crypto, chain: Chain) -> str:
     return crypto.address(chain)
 
 
-def predict_address(*, vault: str, salt: bytes) -> str:
-    return predict_xcash_vault_slot_address(vault=vault, salt=salt)
+def predict_address(*, chain: Chain, vault: str, salt: bytes) -> str:
+    addresses = chain.vault_slot_contract_addresses()
+    return predict_xcash_vault_slot_address(
+        vault=vault,
+        salt=salt,
+        factory=addresses.factory,
+        vault_slot_template=addresses.template,
+    )
 
 
 def is_deployed_on_chain(*, chain: Chain, address: str) -> bool:
@@ -41,10 +46,11 @@ def create_deploy_tx_task(*, slot: VaultSlot) -> TxTask:
         chain_type=ChainType.EVM,
         usage=AddressUsage.HotWallet,
     )
+    addresses = slot.chain.vault_slot_contract_addresses()
     intent = build_vault_slot_deploy_intent(
         sender=sender,
         chain=slot.chain,
-        factory_address=XCASH_VAULT_SLOT_FACTORY_ADDRESS,
+        factory_address=addresses.factory,
         vault_address=Web3.to_checksum_address(slot.project.evm_vault),
         salt=bytes(slot.salt),
     )

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from django.conf import settings
 from tron.adapter import TronAdapter
 from tron.contracts_codec import predict_tron_vault_slot_address
 from tron.intents import build_vault_slot_collect_intent
@@ -26,12 +25,13 @@ def collect_token_address(*, crypto, chain: Chain) -> str:
     return crypto.address(chain)
 
 
-def predict_address(*, vault: str, salt: bytes) -> str:
+def predict_address(*, chain: Chain, vault: str, salt: bytes) -> str:
+    addresses = chain.vault_slot_contract_addresses()
     return predict_tron_vault_slot_address(
         vault=vault,
         salt=salt,
-        factory=settings.TRON_VAULT_SLOT_FACTORY_ADDRESS,
-        vault_slot_template=settings.TRON_VAULT_SLOT_TEMPLATE_ADDRESS,
+        factory=addresses.factory,
+        vault_slot_template=addresses.template,
     )
 
 
@@ -44,10 +44,11 @@ def create_deploy_tx_task(*, slot: VaultSlot) -> TxTask:
         chain_type=ChainType.TRON,
         usage=AddressUsage.HotWallet,
     )
+    addresses = slot.chain.vault_slot_contract_addresses()
     intent = build_vault_slot_deploy_intent(
         sender=sender,
         chain=slot.chain,
-        factory_address=settings.TRON_VAULT_SLOT_FACTORY_ADDRESS,
+        factory_address=addresses.factory,
         vault_address=slot.project.tron_vault,
         salt=bytes(slot.salt),
     )

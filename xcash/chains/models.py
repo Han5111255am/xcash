@@ -20,9 +20,11 @@ from chains.constants import CHAIN_SPECS
 from chains.constants import NATIVE_COIN_COINGECKO_IDS
 from chains.constants import TRON_MAINNET_BASE_URL
 from chains.constants import TRON_TESTNET_BASE_URL
+from chains.constants import TRON_VAULT_SLOT_CONTRACT_ADDRESSES
 from chains.constants import ChainCode
 from chains.constants import ChainSpec
 from chains.constants import ChainType  # noqa: F401  re-export 给下游模块过渡使用
+from chains.constants import VaultSlotContractAddresses
 from common.fields import AddressField
 from common.fields import HashField
 from common.models import UndeletableModel
@@ -139,6 +141,29 @@ class Chain(models.Model):
         按 is_testnet 动态选址，不落库成字段——全网就这两套端点，无需运维逐链配置。
         """
         return TRON_TESTNET_BASE_URL if self.is_testnet else TRON_MAINNET_BASE_URL
+
+    def vault_slot_contract_addresses(self) -> VaultSlotContractAddresses:
+        """本链 VaultSlot Factory / Template 基础合约地址。
+
+        EVM 通过确定性 CREATE2 在所有 EVM 链上共享同一组地址；Tron / TVM 的部署地址
+        按网络独立维护，调用方必须带着具体 chain 获取，避免主网与 Nile 混用。
+        """
+        if self.type == ChainType.EVM:
+            from evm.constants import XCASH_VAULT_SLOT_FACTORY_ADDRESS  # noqa: PLC0415
+            from evm.constants import XCASH_VAULT_SLOT_TEMPLATE_ADDRESS  # noqa: PLC0415
+
+            return VaultSlotContractAddresses(
+                factory=XCASH_VAULT_SLOT_FACTORY_ADDRESS,
+                template=XCASH_VAULT_SLOT_TEMPLATE_ADDRESS,
+            )
+        if self.type == ChainType.TRON:
+            try:
+                return TRON_VAULT_SLOT_CONTRACT_ADDRESSES[self.code]
+            except KeyError as exc:
+                raise RuntimeError(
+                    f"链 {self.code} 未登记 Tron VaultSlot 合约地址"
+                ) from exc
+        raise RuntimeError(f"链 {self.code} 不支持 VaultSlot 合约地址")
 
     @property
     def confirm_block_count(self) -> int:

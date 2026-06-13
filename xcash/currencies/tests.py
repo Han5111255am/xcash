@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
-from django.test import override_settings
 from web3 import Web3
 
 from chains.capabilities import ChainProductCapabilityService
@@ -107,13 +106,6 @@ class CustomTokenPricingTests(TestCase):
             )
         )
 
-    @override_settings(
-        TRON_VAULT_SLOT_NILE_VERIFIED=True,
-        TRON_VAULT_SLOT_FACTORY_ADDRESS="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
-        TRON_VAULT_SLOT_TEMPLATE_ADDRESS="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
-        TRON_VAULT_SLOT_FEE_LIMIT=150_000_000,
-        TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT=300_000_000,
-    )
     def test_tron_deposit_address_allows_usdt_and_native_trx_only(self):
         # Tron VaultSlot 充币地址放行 USDT 与原生 TRX；其余 TRC20 暂不开放。
         tron = Chain.objects.create(

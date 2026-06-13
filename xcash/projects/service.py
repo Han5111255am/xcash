@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from tron.config import tron_vault_slot_runtime_ready
-
 from chains.capabilities import ChainProductCapabilityService
 from chains.constants import CHAIN_SPECS
 from chains.models import ChainType
@@ -26,13 +24,13 @@ class ProjectService:
     def contract_receivable_chain_codes(project: Project) -> set[str]:
         """智能合约收款模式下项目可收款的链 code 集合。
 
-        智能合约收款依赖对应链类型的项目不可变归集地址；Tron 只有 Nile 验证结论与
-        factory/template/fee_limit 明确配置后才暴露，默认配置下始终只返回 EVM。
+        智能合约收款依赖对应链类型的项目不可变归集地址；Tron 的基础合约地址是
+        发布前必须补齐的项目常量，不在业务入口重复做运行时门禁。
         """
         chain_codes = set()
         if project.evm_vault:
             chain_codes |= ChainService.codes_of_types({ChainType.EVM})
-        if project.tron_vault and tron_vault_slot_runtime_ready():
+        if project.tron_vault:
             chain_codes |= set(
                 CryptoOnChain.objects.filter(
                     chain__type=ChainType.TRON,
@@ -114,7 +112,7 @@ class ProjectService:
     @staticmethod
     def _vault_slot_invoice_receiving_ready(*, project: Project, chain) -> bool:
         if chain.type == ChainType.TRON:
-            return bool(project.tron_vault) and tron_vault_slot_runtime_ready()
+            return bool(project.tron_vault)
         if chain.type == ChainType.EVM:
             return bool(project.evm_vault)
         return False

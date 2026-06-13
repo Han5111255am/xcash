@@ -19,6 +19,7 @@ from django.utils import timezone
 from tron.admin import TronWatchCursorAdmin
 from tron.client import TronClientError
 from tron.client import TronHttpClient
+from tron.constants import TRON_VAULT_SLOT_FEE_LIMIT
 from tron.models import TRON_MAX_BROADCAST_HASHES
 from tron.models import TRON_SIMULATION_REVERT_FAIL_MIN_COUNT
 from tron.models import TRON_SIMULATION_REVERT_FAIL_MIN_WINDOW
@@ -35,7 +36,9 @@ from web3 import Web3
 
 from chains.adapters import TxCheckResult
 from chains.adapters import TxCheckStatus
+from chains.constants import TRON_VAULT_SLOT_CONTRACT_ADDRESSES
 from chains.constants import ChainCode
+from chains.constants import VaultSlotContractAddresses
 from chains.models import Address
 from chains.models import AddressUsage
 from chains.models import Chain
@@ -477,7 +480,7 @@ class TronTxTaskBroadcastResourceGuardTests(TestCase):
             to="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
             function_selector="collect(address)",
             parameter="00" * 32,
-            fee_limit=150_000_000,
+            fee_limit=TRON_VAULT_SLOT_FEE_LIMIT,
         )
 
     def unsigned_transaction(self, *, contract_address: str | None = None) -> dict:
@@ -502,7 +505,7 @@ class TronTxTaskBroadcastResourceGuardTests(TestCase):
                 }
             ],
             "expiration": 123,
-            "fee_limit": 150_000_000,
+            "fee_limit": TRON_VAULT_SLOT_FEE_LIMIT,
         }
         return {
             "raw_data_hex": raw_data_hex,
@@ -893,7 +896,7 @@ class TronTxTaskSimulationRevertTests(TestCase):
             to="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
             function_selector="collect(address)",
             parameter="00" * 32,
-            fee_limit=150_000_000,
+            fee_limit=TRON_VAULT_SLOT_FEE_LIMIT,
         )
 
     def prime_streak(self, task: TronTxTask, *, count: int, first_at) -> None:
@@ -935,7 +938,7 @@ class TronTxTaskSimulationRevertTests(TestCase):
                 }
             ],
             "expiration": 123,
-            "fee_limit": 150_000_000,
+            "fee_limit": TRON_VAULT_SLOT_FEE_LIMIT,
         }
         return {
             "raw_data_hex": raw_data_hex,
@@ -2310,7 +2313,7 @@ class TronReceiptConfirmTaskTests(TestCase):
             to=self.slot.address,
             function_selector="collect(address)",
             parameter="00" * 32,
-            fee_limit=150_000_000,
+            fee_limit=TRON_VAULT_SLOT_FEE_LIMIT,
         )
         VaultSlotCollectSchedule.objects.create(
             chain=self.chain,
@@ -2336,7 +2339,7 @@ class TronReceiptConfirmTaskTests(TestCase):
             to="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
             function_selector="deployVaultSlot(address,bytes32)",
             parameter="00" * 64,
-            fee_limit=150_000_000,
+            fee_limit=TRON_VAULT_SLOT_FEE_LIMIT,
         )
         VaultSlot.objects.filter(pk=self.slot.pk).update(deploy_tx_task=base_task)
         return base_task
@@ -2585,10 +2588,14 @@ class TronReceiptConfirmTaskTests(TestCase):
         collect_gas_fee.assert_not_called()
 
 
-@override_settings(
-    TRON_VAULT_SLOT_FACTORY_ADDRESS="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
-    TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT=300_000_000,
-    TRON_VAULT_SLOT_FEE_LIMIT=150_000_000,
+@patch.dict(
+    TRON_VAULT_SLOT_CONTRACT_ADDRESSES,
+    {
+        ChainCode.Tron: VaultSlotContractAddresses(
+            factory="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+            template="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+        )
+    },
 )
 class TronCollectScheduleExecuteTests(TestCase):
     """归集计划到期建链上任务的行为:必须确认 slot 已部署,且每个计划各建独立任务。"""
@@ -2739,7 +2746,10 @@ class TronCollectScheduleExecuteTests(TestCase):
             "collect(address)",
         )
         self.assertEqual(schedule.tx_task.tron_task.to, self.slot.address)
-        self.assertEqual(schedule.tx_task.tron_task.fee_limit, 150_000_000)
+        self.assertEqual(
+            schedule.tx_task.tron_task.fee_limit,
+            TRON_VAULT_SLOT_FEE_LIMIT,
+        )
 
     @patch("tron.vault_slots.TronAdapter.is_contract", return_value=True)
     def test_two_schedules_same_slot_get_independent_tasks(self, is_contract):

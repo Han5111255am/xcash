@@ -48,6 +48,12 @@ class ChainSpec:
     icon: str = ""
 
 
+@dataclass(frozen=True)
+class VaultSlotContractAddresses:
+    factory: str = ""
+    template: str = ""
+
+
 def _icon(slug: str) -> str:
     """DefiLlama 公开链图标 CDN。slug 为其链命名（与本系统 code 不机械对应，
     如 bsc→binance、arbitrum-one→arbitrum），故逐条显式指定而非由 code 派生。"""
@@ -134,6 +140,17 @@ EVM_CHAIN_CODES: tuple[str, ...] = tuple(
 TRON_CHAIN_CODES: tuple[str, ...] = tuple(
     code for code, spec in CHAIN_SPECS.items() if spec.type == ChainType.TRON
 )
+
+
+# Tron / TVM 的基础合约部署地址按网络独立维护：主网与 Nile 不共享地址。
+# 当前先留空，完成各网络部署与验收后只需补充这张表。
+TRON_VAULT_SLOT_CONTRACT_ADDRESSES: dict[str, VaultSlotContractAddresses] = {
+    ChainCode.Tron: VaultSlotContractAddresses(),
+    ChainCode.Nile: VaultSlotContractAddresses(
+        factory="TKGRiYck66Q8HGbAeo2fpr7jE1LEKBAdx6",
+        template="TCkffHajnPGXZxmbUcDUBcn9nz3j9ftVbR",
+    ),
+}
 
 # Tron HTTP 网关地址固定两套：主网与测试网（Nile）。按 Chain.is_testnet 二选一，
 # 不落库成字段，避免运维填错或与 code 漂移。

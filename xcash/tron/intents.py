@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import eth_abi
-from django.conf import settings
+from tron.constants import TRON_VAULT_SLOT_FEE_LIMIT
 from tron.contracts_codec import tron_base58_to_evm_address
 from web3 import Web3
 
@@ -80,7 +80,7 @@ def build_vault_slot_deploy_intent(
         contract_address=factory_address,
         function_selector_value="deployVaultSlot(address,bytes32)",
         parameter=parameter,
-        fee_limit=settings.TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT,
+        fee_limit=TRON_VAULT_SLOT_FEE_LIMIT,
         tx_type=TxTaskType.VaultSlotDeploy,
         verify_fn=verify_fn,
     )
@@ -104,7 +104,7 @@ def build_vault_slot_collect_intent(
         contract_address=slot_address,
         function_selector_value="collect(address)",
         parameter=parameter,
-        fee_limit=settings.TRON_VAULT_SLOT_FEE_LIMIT,
+        fee_limit=TRON_VAULT_SLOT_FEE_LIMIT,
         tx_type=TxTaskType.VaultSlotCollect,
         verify_fn=verify_fn,
     )

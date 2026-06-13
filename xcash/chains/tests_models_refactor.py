@@ -4,8 +4,10 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 
+from chains.constants import TRON_VAULT_SLOT_CONTRACT_ADDRESSES
 from chains.constants import ChainCode
 from chains.constants import ChainType
+from chains.constants import VaultSlotContractAddresses
 from chains.models import Chain
 
 
@@ -53,6 +55,42 @@ def test_clean_skips_rpc_check_when_evm_chain_inactive():
 def test_clean_skips_for_tron():
     chain = Chain(code=ChainCode.Tron, rpc="", tron_api_key="key")
     chain.full_clean()
+
+
+def test_vault_slot_contract_addresses_for_evm_chain():
+    from evm.constants import XCASH_VAULT_SLOT_FACTORY_ADDRESS
+    from evm.constants import XCASH_VAULT_SLOT_TEMPLATE_ADDRESS
+
+    chain = Chain(code=ChainCode.Ethereum, type=ChainType.EVM)
+
+    addresses = chain.vault_slot_contract_addresses()
+
+    assert addresses.factory == XCASH_VAULT_SLOT_FACTORY_ADDRESS
+    assert addresses.template == XCASH_VAULT_SLOT_TEMPLATE_ADDRESS
+
+
+def test_vault_slot_contract_addresses_for_tron_chain_uses_chain_code():
+    mainnet_addresses = VaultSlotContractAddresses(
+        factory="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+        template="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+    )
+    nile_addresses = VaultSlotContractAddresses(
+        factory="TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj",
+        template="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+    )
+
+    with patch.dict(
+        TRON_VAULT_SLOT_CONTRACT_ADDRESSES,
+        {
+            ChainCode.Tron: mainnet_addresses,
+            ChainCode.Nile: nile_addresses,
+        },
+    ):
+        mainnet = Chain(code=ChainCode.Tron, type=ChainType.TRON)
+        nile = Chain(code=ChainCode.Nile, type=ChainType.TRON)
+
+        assert mainnet.vault_slot_contract_addresses() == mainnet_addresses
+        assert nile.vault_slot_contract_addresses() == nile_addresses
 
 
 @pytest.mark.django_db

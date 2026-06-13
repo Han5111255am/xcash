@@ -18,8 +18,10 @@ from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 from web3 import Web3
 
+from chains.constants import TRON_VAULT_SLOT_CONTRACT_ADDRESSES
 from chains.constants import ChainCode
 from chains.constants import ChainType
+from chains.constants import VaultSlotContractAddresses
 from chains.models import Chain
 from chains.models import Transfer
 from chains.models import TransferStatus
@@ -868,14 +870,7 @@ class InvoiceContractBillingValidationTests(TestCase):
             ).exists()
         )
 
-    @override_settings(
-        TRON_VAULT_SLOT_NILE_VERIFIED=True,
-        TRON_VAULT_SLOT_FACTORY_ADDRESS="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
-        TRON_VAULT_SLOT_TEMPLATE_ADDRESS="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
-        TRON_VAULT_SLOT_FEE_LIMIT=150_000_000,
-        TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT=300_000_000,
-    )
-    def test_tron_methods_exposed_only_after_runtime_gate(self):
+    def test_tron_methods_exposed_for_tron_vault_project(self):
         self.project.evm_invoice_receiving_mode = InvoiceReceivingMode.VaultSlot
         self.project.tron_invoice_receiving_mode = InvoiceReceivingMode.VaultSlot
         self.project.tron_vault = "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8"
@@ -894,13 +889,6 @@ class InvoiceContractBillingValidationTests(TestCase):
             {self.eth_chain.code, self.tron_chain.code},
         )
 
-    @override_settings(
-        TRON_VAULT_SLOT_NILE_VERIFIED=True,
-        TRON_VAULT_SLOT_FACTORY_ADDRESS="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
-        TRON_VAULT_SLOT_TEMPLATE_ADDRESS="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
-        TRON_VAULT_SLOT_FEE_LIMIT=150_000_000,
-        TRON_VAULT_SLOT_DEPLOY_FEE_LIMIT=300_000_000,
-    )
     def test_select_method_allocates_tron_vault_slot(self):
         from chains.models import VaultSlot
 
@@ -924,7 +912,16 @@ class InvoiceContractBillingValidationTests(TestCase):
             expires_at=timezone.now() + timedelta(minutes=10),
         )
 
-        selected = invoice.select_method(self.usdt, self.tron_chain)
+        with patch.dict(
+            TRON_VAULT_SLOT_CONTRACT_ADDRESSES,
+            {
+                ChainCode.Tron: VaultSlotContractAddresses(
+                    factory="TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+                    template="TWd4WrZ9wn84f5x1hZhL4DHvk738ns5jwb",
+                )
+            },
+        ):
+            selected = invoice.select_method(self.usdt, self.tron_chain)
 
         self.assertTrue(selected)
         invoice.refresh_from_db()

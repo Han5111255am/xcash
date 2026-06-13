@@ -33,13 +33,15 @@ cd xcash/tron/contracts && forge build
 
 先部署 template，再用 template 地址部署 factory（见 `nile_verification/deploy_contracts.py`）。
 
-部署完成后写入：
+部署完成后，验证脚本继续通过环境变量读取本次部署输出：
 
 ```bash
 export TRON_VAULT_SLOT_TEMPLATE_ADDRESS="T..."
 export TRON_VAULT_SLOT_FACTORY_ADDRESS="T..."
-export TRON_VAULT_SLOT_FEE_LIMIT="..."
 ```
+
+运行时代码不再读取全局 factory/template 环境变量；主网与 Nile 的地址按链维护在
+`xcash/chains/constants.py` 的 `TRON_VAULT_SLOT_CONTRACT_ADDRESSES`。
 
 Nile 验收脚本在：
 
@@ -57,5 +59,5 @@ xcash/tron/nile_verification/
 .venv/bin/python xcash/tron/nile_verification/activation_create2_ab.py --case b --broadcast --wait
 ```
 
-只有上述 Nile 验收通过并回填结论后，才允许设置
-`TRON_VAULT_SLOT_NILE_VERIFIED=True` 对普通项目暴露 Tron 收款/充币。
+只有上述 Nile 验收通过、回填对应链的 `TRON_VAULT_SLOT_CONTRACT_ADDRESSES` 后，才允许发布
+对普通项目暴露 Tron 收款/充币。
