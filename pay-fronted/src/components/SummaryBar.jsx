@@ -63,7 +63,7 @@ function InvoiceCountdown({ invoice, t }) {
 
   const countdownTone = useMemo(() => {
     if (remainingMs !== null && remainingMs <= 60_000) return "text-destructive"
-    return "text-muted-foreground"
+    return "text-amber-600 dark:text-amber-400"
   }, [remainingMs])
 
   const countdownText = useMemo(() => formatRemainingTime(remainingMs, t), [remainingMs, t])
@@ -73,7 +73,7 @@ function InvoiceCountdown({ invoice, t }) {
   return (
     <div
       className={cn(
-        "mt-1 flex items-center justify-center gap-1.5 text-xs tabular-nums",
+        "inline-flex min-w-0 items-center justify-center gap-1.5 text-xs font-medium tabular-nums",
         countdownTone
       )}
     >
@@ -96,15 +96,15 @@ function SummaryBar({ invoice, isDark, toggleTheme }) {
 
   return (
     <div className="border-b px-5 py-3">
-      <div className="max-w-lg mx-auto flex items-center justify-between gap-3">
+      <div className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)] items-center gap-3">
         {/* Brand */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex min-w-0 items-center gap-2 justify-self-start">
           <LogoMark size={20} />
-          <span className="font-semibold text-sm tracking-tight">Xcash</span>
+          <span className="hidden font-semibold text-sm tracking-tight sm:inline">Xcash</span>
         </div>
 
         {/* Amount */}
-        <div className="text-center flex-1 min-w-0">
+        <div className="min-w-0 justify-self-center text-center">
           <div className="flex items-baseline justify-center gap-2 flex-wrap">
             <span className="text-lg font-semibold tabular-nums sm:text-xl">
               {invoice?.amount} {invoice?.currency}
@@ -118,39 +118,41 @@ function SummaryBar({ invoice, isDark, toggleTheme }) {
           {invoice?.title && (
             <div className="text-xs text-muted-foreground truncate mt-0.5">{invoice.title}</div>
           )}
-          <InvoiceCountdown invoice={invoice} t={t} />
+          <div className="mt-1 flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <Badge variant={variant} className="shrink-0">
+              {PULSING.has(displayStatus) && (
+                <span className="size-1.5 rounded-full bg-current animate-pulse" />
+              )}
+              {t(`invoice.status.${displayStatus}`) || displayStatus}
+            </Badge>
+            <InvoiceCountdown invoice={invoice} t={t} />
+          </div>
         </div>
 
-        {/* Status */}
-        <Badge variant={variant} className="shrink-0">
-          {PULSING.has(displayStatus) && (
-            <span className="size-1.5 rounded-full bg-current animate-pulse" />
-          )}
-          {t(`invoice.status.${displayStatus}`) || displayStatus}
-        </Badge>
+        <div className="flex items-center justify-end gap-2 justify-self-end">
+          {/* Locale toggle */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleLocale}
+            className="shrink-0 text-xs font-semibold"
+            aria-label="Switch language"
+            title={locale === "zh" ? "Switch to English" : "切换到中文"}
+          >
+            {locale === "zh" ? "EN" : "中"}
+          </Button>
 
-        {/* Locale toggle */}
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={toggleLocale}
-          className="shrink-0 text-xs font-semibold"
-          aria-label="Switch language"
-          title={locale === "zh" ? "Switch to English" : "切换到中文"}
-        >
-          {locale === "zh" ? "EN" : "中"}
-        </Button>
-
-        {/* Theme toggle */}
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={toggleTheme}
-          className="shrink-0"
-          aria-label="Toggle theme"
-        >
-          {isDark ? <Sun /> : <Moon />}
-        </Button>
+          {/* Theme toggle */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleTheme}
+            className="shrink-0"
+            aria-label="Toggle theme"
+          >
+            {isDark ? <Sun /> : <Moon />}
+          </Button>
+        </div>
       </div>
     </div>
   )

@@ -67,7 +67,7 @@
   },
   "waiting": {
     "title": "等待支付",
-    "description": "请尽快完成账单收款",
+    "description": "请尽快完成支付",
     "timeRemaining": "剩余时间",
     "expired": "已过期",
     "days": "天"

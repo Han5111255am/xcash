@@ -47,11 +47,11 @@ function StepCompleted({ invoice }) {
               </div>
               <dl className="grid gap-3">
                 {invoiceRows.map((row) => (
-                  <div key={row.label} className="grid min-h-6 grid-cols-[5rem_minmax(0,1fr)] items-center gap-4">
-                    <dt className="text-sm leading-6 text-muted-foreground">{row.label}</dt>
+                  <div key={row.label} className="grid min-h-5 grid-cols-[5rem_minmax(0,1fr)] items-center gap-3">
+                    <dt className="text-xs font-medium leading-5 text-muted-foreground">{row.label}</dt>
                     <dd className={row.mono
-                      ? "text-right text-sm font-mono leading-6 break-all"
-                      : "text-right text-sm font-semibold leading-6 break-words"}
+                      ? "text-right text-xs font-mono leading-5 break-all"
+                      : "text-right text-xs font-medium leading-5 break-words"}
                     >
                       {row.value}
                     </dd>
