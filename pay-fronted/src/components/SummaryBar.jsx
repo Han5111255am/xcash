@@ -8,9 +8,9 @@ import { getInvoiceDisplayStatus } from "@/lib/invoiceStatus"
 
 // 状态 → Badge 语义变体。只改变用户可见状态色，不影响后端状态值。
 const STATUS_VARIANT = {
-  waiting: "warning",
+  waiting: "info",
   confirming: "info",
-  finalizing: "success",
+  finalizing: "info",
   completed: "success",
   expired: "destructive",
 }
