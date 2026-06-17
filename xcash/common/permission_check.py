@@ -172,7 +172,7 @@ def _refresh_saas_permission(*, appid: str) -> None:
         return
 
     perm["_fetched_at"] = time.time()
-    cache.set(_cache_key(appid), perm, None)
+    cache.set(_cache_key(appid), perm, 10)
 
 
 def _fetch_from_saas(appid: str) -> dict:
