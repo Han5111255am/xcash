@@ -52,6 +52,9 @@ DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
 # 首次部署且库内无管理员时自动创建后台账号（用户名固定 admin）
 DJANGO_DEFAULT_SUPERUSER_PASSWORD=${DJANGO_DEFAULT_SUPERUSER_PASSWORD}
 
+# 可选：自定义后台路径。不设置时后台仍挂在站点根路径，并在后台右上角显示安全提醒。
+# ADMIN_PATH=secure-admin
+
 # 性能档位：low=1c2g，middle=4c8g，high=8c16g；不设置默认 low
 PERFORMANCE=${PERFORMANCE}
 

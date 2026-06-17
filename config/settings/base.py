@@ -17,6 +17,8 @@ sys.path.append(str(APPS_DIR))
 
 from common.logger import configure_structlog  # noqa: E402
 from common.logger import shared_processors  # noqa: E402
+from config.admin_path import admin_route_prefix  # noqa: E402
+from config.admin_path import normalize_admin_path  # noqa: E402
 from config.performance import get_bool_default  # noqa: E402
 from config.performance import get_int  # noqa: E402
 
@@ -302,6 +304,9 @@ SESSION_COOKIE_HTTPONLY = True
 # ------------------------------------------------------------------------------
 # Django Admin URL.
 # https://docs.djangoproject.com/en/dev/ref/settings/#admins
+ADMIN_PATH = normalize_admin_path(env.str("ADMIN_PATH", default=""))
+ADMIN_ROUTE_PREFIX = admin_route_prefix(ADMIN_PATH)
+ADMIN_PATH_CONFIGURED = bool(ADMIN_PATH)
 ADMINS = [("""Hawking""", "hawking@xca.sh")]
 # https://docs.djangoproject.com/en/dev/ref/settings/#managers
 MANAGERS = ADMINS

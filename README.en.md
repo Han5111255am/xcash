@@ -190,6 +190,14 @@ SITE_DOMAIN=xcash.example.com
 
 Make sure the domain DNS resolves to the server IP, and configure a reverse proxy such as Nginx or Caddy to forward traffic to `http://localhost:6688`.
 
+Optional: set `ADMIN_PATH` to move the admin entrance to a custom path, for example:
+
+```env
+ADMIN_PATH=secure-admin
+```
+
+If unset, the admin remains mounted at the site root and shows a security reminder in the top-right admin badge.
+
 ### 4. Start services
 
 ```bash

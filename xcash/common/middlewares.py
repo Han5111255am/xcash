@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from django.conf import settings
 from django.http import HttpRequest
+from django.urls import Resolver404
+from django.urls import resolve
 from django.utils import timezone
 from django_redis import get_redis_connection
 
@@ -28,11 +30,22 @@ class AdminSessionTimeoutMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path.startswith("/admin/") and request.user.is_authenticated:
+        if request.user.is_authenticated and self.is_admin_request_path(request):
             from core.runtime_settings import get_admin_session_timeout_seconds
 
             request.session.set_expiry(get_admin_session_timeout_seconds())
         return self.get_response(request)
+
+    def is_admin_request_path(self, request: HttpRequest) -> bool:
+        try:
+            match = resolve(request.path_info)
+        except Resolver404:
+            return False
+
+        return (
+            match.namespace == "admin"
+            or match.url_name in {"operational-inspection", "admin-path-redirect"}
+        )
 
 
 @dataclass

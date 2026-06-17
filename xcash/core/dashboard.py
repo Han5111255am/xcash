@@ -1,5 +1,6 @@
 import json
 
+from django.conf import settings
 from django.contrib import admin
 from django.shortcuts import render
 from django.urls import reverse
@@ -22,7 +23,12 @@ def _build_environment_badge(risk_summary: dict, resource_risk_counts: dict) -> 
         + resource_risk_counts["tron_low_resource_count"]
     )
     if pending_count > 0:
+        if not settings.ADMIN_PATH_CONFIGURED:
+            return [_("ADMIN_PATH 未设置 / 存在高风险告警"), "danger"]
         return [_("存在高风险告警"), "danger"]
+
+    if not settings.ADMIN_PATH_CONFIGURED:
+        return [_("ADMIN_PATH 未设置"), "warning"]
 
     return [_("运行正常"), "success"]
 

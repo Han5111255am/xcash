@@ -18,6 +18,7 @@ from django.core.cache import cache as _cache
 from django.core.management import call_command
 from django.test import SimpleTestCase
 from django.test import TestCase
+from django.test import override_settings
 from tron.models import TronTxTask
 from web3 import Web3
 
@@ -60,6 +61,53 @@ def setUpModule():
 
 def tearDownModule():
     _cache.clear()
+
+
+class AdminPathConfigTests(SimpleTestCase):
+    def test_normalize_admin_path_trims_slashes(self):
+        from config.admin_path import admin_route_prefix
+        from config.admin_path import normalize_admin_path
+
+        self.assertEqual(normalize_admin_path("  /secure-admin/  "), "secure-admin")
+        self.assertEqual(admin_route_prefix("secure-admin"), "secure-admin/")
+        self.assertEqual(normalize_admin_path("   "), "")
+        self.assertEqual(admin_route_prefix(""), "")
+
+    @override_settings(ADMIN_PATH="", ADMIN_ROUTE_PREFIX="")
+    def test_default_admin_urlpatterns_keep_admin_at_root(self):
+        from config.urls import build_admin_urlpatterns
+
+        patterns = build_admin_urlpatterns()
+
+        self.assertEqual(str(patterns[0].pattern), "")
+        self.assertEqual(str(patterns[1].pattern), "operations/inspection")
+        self.assertEqual(str(patterns[-1].pattern), "")
+
+    @override_settings(ADMIN_PATH="secure-admin", ADMIN_ROUTE_PREFIX="secure-admin/")
+    def test_configured_admin_urlpatterns_use_admin_path_prefix(self):
+        from config.urls import build_admin_urlpatterns
+
+        patterns = build_admin_urlpatterns()
+
+        self.assertEqual(str(patterns[0].pattern), "secure-admin")
+        self.assertEqual(str(patterns[1].pattern), "secure-admin/")
+        self.assertEqual(
+            str(patterns[2].pattern), "secure-admin/operations/inspection"
+        )
+        self.assertEqual(str(patterns[-1].pattern), "secure-admin/")
+
+    def test_admin_session_timeout_middleware_detects_root_admin_route(self):
+        from django.test import RequestFactory
+
+        from common.middlewares import AdminSessionTimeoutMiddleware
+
+        middleware = AdminSessionTimeoutMiddleware(lambda request: None)
+        factory = RequestFactory()
+
+        self.assertTrue(middleware.is_admin_request_path(factory.get("/")))
+        self.assertFalse(
+            middleware.is_admin_request_path(factory.get("/v1/invoice/test"))
+        )
 
 
 class SystemSettingsRuntimeTests(TestCase):
@@ -227,6 +275,20 @@ class EnvironmentBadgeResourceRiskTests(TestCase):
 
         self.assertEqual(badge[1], "danger")
 
+    @override_settings(ADMIN_PATH_CONFIGURED=False)
+    def test_badge_warns_when_admin_path_is_not_configured(self):
+        from django.test import RequestFactory
+
+        from core.dashboard import environment_callback
+
+        request = RequestFactory().get("/")
+
+        badge = environment_callback(request)
+
+        self.assertEqual(str(badge[0]), "ADMIN_PATH 未设置")
+        self.assertEqual(badge[1], "warning")
+
+    @override_settings(ADMIN_PATH_CONFIGURED=True)
     def test_badge_normal_without_any_risk(self):
         from django.test import RequestFactory
 

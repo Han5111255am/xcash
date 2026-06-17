@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.contrib.auth import authenticate
 from django.contrib.auth import login as auth_login
 from django.shortcuts import redirect
+from django.urls import reverse
+from django.urls import reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import FormView
@@ -12,10 +14,11 @@ from .models import User
 
 def _safe_next_path(request) -> str:
     """从请求中提取 next 参数，仅允许同站相对路径，防止 Open Redirect。"""
-    next_path = request.POST.get("next") or request.GET.get("next") or "/"
+    admin_index_path = reverse("admin:index")
+    next_path = request.POST.get("next") or request.GET.get("next") or admin_index_path
     if url_has_allowed_host_and_scheme(next_path, allowed_hosts=None):
         return next_path
-    return "/"
+    return admin_index_path
 
 
 class AdminContextMixin:
@@ -31,14 +34,14 @@ class AdminContextMixin:
             and request.user.is_staff
             and request.path != "/logout/"
         ):
-            return redirect("/")
+            return redirect("admin:index")
         return super().dispatch(request, *args, **kwargs)
 
 
 class LoginView(AdminContextMixin, FormView):
     form_class = LoginForm
     template_name = "auth/login.html"
-    success_url = "/"
+    success_url = reverse_lazy("admin:index")
 
     def form_valid(self, form):
         username = form.cleaned_data["username"]

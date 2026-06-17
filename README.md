@@ -192,6 +192,14 @@ SITE_DOMAIN=xcash.example.com
 
 请确保该域名的 DNS 已解析到服务器 IP，并配置 Nginx 或 Caddy 等反向代理，将流量转发至 `http://localhost:6688`。
 
+可选：设置 `ADMIN_PATH` 将后台入口移动到自定义路径，例如：
+
+```env
+ADMIN_PATH=secure-admin
+```
+
+未设置时后台仍挂在站点根路径，并会在后台右上角显示安全提醒。
+
 ### 4. 启动服务
 
 ```bash
