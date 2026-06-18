@@ -216,6 +216,11 @@ SIDEBAR_UNFOLD = {
                         "link": reverse_lazy("admin:evm_evmtxtask_changelist"),
                     },
                     {
+                        "title": _("Tron 上链任务"),
+                        "icon": "bolt",
+                        "link": reverse_lazy("admin:tron_trontxtask_changelist"),
+                    },
+                    {
                         "title": _("EVM 扫描游标"),
                         "icon": "radar",
                         "link": reverse_lazy("admin:evm_evmscancursor_changelist"),

@@ -2,12 +2,96 @@ from django.contrib import admin
 from django.db.models import F
 from django.db.models.functions import Greatest
 from tron.client import TronHttpClient
+from tron.models import TronTxTask
 from tron.models import TronWatchCursor
 from unfold.decorators import display
 
 from chains.models import Chain
 from common.admin import ReadOnlyModelAdmin
 from common.admin_scan_cursor import SyncScanCursorToLatestActionMixin
+
+
+@admin.register(TronTxTask)
+class TronTxTaskAdmin(ReadOnlyModelAdmin):
+    ordering = ("-created_at",)
+    exclude = ("signed_payload",)
+    readonly_fields = (
+        "base_task",
+        "sender",
+        "chain",
+        "to",
+        "function_selector",
+        "parameter",
+        "fee_limit",
+        "display_status",
+        "tx_id",
+        "display_expiration_state",
+        "expiration",
+        "ref_block_bytes",
+        "ref_block_hash",
+        "simulation_revert_count",
+        "simulation_revert_first_at",
+        "formatted_last_attempt_at",
+        "created_at",
+    )
+    list_display = (
+        "display_sender",
+        "display_chain",
+        "tx_type",
+        "to",
+        "function_selector",
+        "display_status",
+        "display_expiration_state",
+        "tx_id",
+        "created_at",
+        "formatted_last_attempt_at",
+    )
+    list_filter = ("chain", "base_task__tx_type", "base_task__status")
+    list_select_related = ("base_task", "sender", "chain")
+    search_fields = ("base_task__tx_hash", "tx_id", "sender__address", "to")
+
+    @admin.display(description="执行时间", ordering="last_attempt_at")
+    def formatted_last_attempt_at(self, obj: TronTxTask):
+        if obj.last_attempt_at:
+            return obj.last_attempt_at.strftime("%-m月%-d日 %H:%M:%S")
+        return None
+
+    @display(
+        description="状态",
+        label={
+            "待提交": "warning",
+            "已提交": "warning",
+            "成功": "success",
+            "失败": "danger",
+        },
+    )
+    def display_status(self, obj: TronTxTask):
+        return obj.status
+
+    @display(
+        description="过期",
+        label={
+            "未签名": "secondary",
+            "否": "success",
+            "是": "warning",
+        },
+    )
+    def display_expiration_state(self, obj: TronTxTask) -> str:
+        if obj.expiration is None:
+            return "未签名"
+        return "是" if obj.is_expired() else "否"
+
+    @admin.display(description="类型", ordering="base_task__tx_type")
+    def tx_type(self, obj: TronTxTask):  # pragma: no cover
+        return obj.base_task.get_tx_type_display() if obj.base_task_id else "—"
+
+    @admin.display(ordering="sender__address", description="发送地址")
+    def display_sender(self, obj: TronTxTask):  # pragma: no cover
+        return obj.sender
+
+    @admin.display(ordering="chain__code", description="网络")
+    def display_chain(self, obj: TronTxTask):  # pragma: no cover
+        return obj.chain
 
 
 @admin.register(TronWatchCursor)
