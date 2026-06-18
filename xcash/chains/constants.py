@@ -148,7 +148,10 @@ TRON_CHAIN_CODES: tuple[str, ...] = tuple(
 # Tron / TVM 的基础合约部署地址按网络独立维护：主网与 Nile 不共享地址。
 # 当前先留空，完成各网络部署与验收后只需补充这张表。
 TRON_VAULT_SLOT_CONTRACT_ADDRESSES: dict[str, VaultSlotContractAddresses] = {
-    ChainCode.Tron: VaultSlotContractAddresses(),
+    ChainCode.Tron: VaultSlotContractAddresses(
+        factory="TJN27UTVGpeRsFeWfudECR8R23qsYYii3V",
+        implementation="TQRHNyVYqYZ1xbVWgaeLJy4j9meA8CPB45",
+    ),
     ChainCode.Nile: VaultSlotContractAddresses(
         factory="THLZfngQPW5zMcxCnaS7CPKuTESD3JMmu8",
         implementation="TVWbugJAKxAxBMKPap7iZDZn6iYvmFwoUX",

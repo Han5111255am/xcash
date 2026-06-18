@@ -13,6 +13,8 @@ scripts/merchant_hmac/
 business-plan/
 # upgrade.sh 生成的升级前数据库备份（含生产数据），绝不可入库。
 backups/
+xcash/tron/mainnet_deployment/
+xcash/tron/nile_verification/
 
 
 # AI tools
@@ -97,6 +99,8 @@ celerybeat-schedule*
 .venv
 .env
 .env.local
+.env_mainnet
+**/.env_mainnet
 .env.signer
 **/.env.production
 venv/
