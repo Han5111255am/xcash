@@ -89,7 +89,7 @@ services:
       - "${LOCAL_EVM_CHAIN_ID:-31337}"
       # 每秒自动出块，模拟真实链的区块推进，使 FULL 确认模式和 block_number_updated 正常工作。
       - --block-time
-      - "${LOCAL_EVM_BLOCK_TIME:-1}"
+      - "${LOCAL_EVM_BLOCK_TIME:-12}"
       # 持久化本地链状态，使账户 nonce、合约代码、余额和区块环境随容器重启保留。
       # 如果需要重建本地链，必须同时重置 dev DB 或清理依赖 anvil 链事实的业务数据。
       - --state
