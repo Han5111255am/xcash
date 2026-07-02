@@ -38,7 +38,7 @@ DEFAULT_TRON_SCAN_BATCH_SIZE = 32
 # 滞后问题。保留少量 lag 是防 TronGrid 负载均衡下不同节点固化头的微小偏差：
 # getnowblock 命中的节点可能领先 gettransactioninfobyblocknum 命中的节点，
 # 后者对"尚未固化的块"返回空列表，与空块不可区分。
-DEFAULT_TRON_SCAN_SAFE_LAG_BLOCKS = 4
+DEFAULT_TRON_SCAN_SAFE_LAG_BLOCKS = 1
 
 # TRC20 Transfer(address,address,uint256) 事件签名主题（64 位小写 hex，无 0x 前缀），
 # 用于从 raw TVM log 自行识别 Transfer 事件，不依赖事件索引服务的 event_name 过滤。
