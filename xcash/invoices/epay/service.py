@@ -64,10 +64,15 @@ class EpaySubmitService:
         ):
             raise EpaySubmitError("invalid sign")
 
-        check_saas_permission(
-            appid=merchant.project.appid,
-            action="invoice",
-        )
+        try:
+            check_saas_permission(
+                appid=merchant.project.appid,
+                action="invoice",
+            )
+        except APIError as exc:
+            # submit.php 是普通 Django View，DRF 的 APIError 没有 handler 会变 500；
+            # 冻结账户等权限拒绝要走协议统一的 "fail" 响应。
+            raise EpaySubmitError(f"saas permission denied: {exc.error_code}") from exc
 
         with transaction.atomic():
             existing_order = cls._get_existing_order_for_update(

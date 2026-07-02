@@ -14,6 +14,8 @@ from chains.constants import ChainCode
 from chains.models import Transfer
 from chains.models import TransferStatus
 from chains.tests_fixtures import make_evm_chain
+from common.error_codes import ErrorCode
+from common.exceptions import APIError
 from currencies.models import Crypto
 from currencies.models import CryptoOnChain
 from currencies.models import Fiat
@@ -495,6 +497,20 @@ class EpaySubmitServiceTests(TestCase):
         mock_check.assert_not_called()
         mock_initialize.assert_not_called()
 
+    @patch(
+        "invoices.epay.service.check_saas_permission",
+        side_effect=APIError(ErrorCode.ACCOUNT_FROZEN),
+    )
+    def test_submit_converts_frozen_account_to_epay_error(self, mock_check):
+        # submit.php 是普通 Django View：SaaS 权限拒绝（DRF APIError）必须转成
+        # EpaySubmitError 走协议统一的 "fail" 响应，而不是 500。
+        params = self._signed_params(out_trade_no="EPAY-FROZEN-1001")
+
+        with self.assertRaises(EpaySubmitError):
+            EpaySubmitService.submit(params)
+
+        self.assertFalse(Invoice.objects.filter(out_no="EPAY-FROZEN-1001").exists())
+
     @patch("invoices.epay.service.InvoiceService.initialize_invoice")
     @patch("invoices.epay.service.check_saas_permission")
     def test_submit_verifies_sign_with_raw_parameter_shape(
@@ -661,11 +677,11 @@ class EpaySubmitServiceTests(TestCase):
         # 拒绝：
         # - 非字符串、空串、纯字母、缺整数部分、3+ 位小数、负数；
         # - 0 / 0.0 / 0.00（< 0.01 拦下）；
-        # - 整数部分超过 24 位（Invoice.amount 是 max_digits=32/decimal_places=8，
-        #   只能容纳 24 位整数；必须在 serializer 阶段拦下，避免 DB 写入 500）。
+        # - 超过单笔上限 100 万（与 native InvoiceCreateSerializer 对齐；
+        #   同时防止 Invoice.worth（max_digits=16/6）在金额×汇率下 DataError 500）。
         valid_large = self._signed_params(
-            money=("9" * 24) + ".99",
-            out_trade_no="EPAY-SUBMIT-MONEY-24",
+            money="1000000.00",
+            out_trade_no="EPAY-SUBMIT-MONEY-MAX",
         )
         serializer = EpaySubmitSerializer(data=valid_large)
         self.assertTrue(serializer.is_valid(), serializer.errors)
@@ -680,6 +696,8 @@ class EpaySubmitServiceTests(TestCase):
             "0",
             "0.0",
             "0.00",
+            "1000000.01",
+            ("9" * 24) + ".99",
             "9" * 25,
             "9" * 30,
             "9" * 30 + ".99",

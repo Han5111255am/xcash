@@ -2953,6 +2953,14 @@ class TronCollectScheduleExecuteTests(TestCase):
     """归集计划到期建链上任务的行为:必须确认 slot 已部署,且每个计划各建独立任务。"""
 
     def setUp(self):
+        # 本类聚焦调度/绑定语义，统一关闭最小归集价值门槛（专项行为见
+        # evm/tests/test_vault_slot_tasks.py 的阈值测试类），余额 mock 无需 amount。
+        collect_threshold_patcher = patch(
+            "core.runtime_settings.get_vault_slot_collect_min_worth_usd",
+            return_value=Decimal("0"),
+        )
+        collect_threshold_patcher.start()
+        self.addCleanup(collect_threshold_patcher.stop)
         self.chain = Chain.objects.create(
             code=ChainCode.Tron,
             rpc="https://api.trongrid.io",

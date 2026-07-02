@@ -102,11 +102,9 @@ class InvoiceCreateSerializer(Serializer):
             raise APIError(ErrorCode.INVALID_INVOICE_CURRENCY)
         return value
 
-    def validate_out_no(self, value):
-        project = self._get_project()
-        if Invoice.objects.filter(project=project, out_no=value).exists():
-            raise APIError(ErrorCode.DUPLICATE_OUT_NO, detail=value)
-        return value
+    # out_no 的重复判定不在 serializer 做：viewset 层实现条件幂等
+    # （参数一致返回已有账单，不一致才报 DUPLICATE_OUT_NO），
+    # 且最终幂等边界在数据库唯一约束。
 
     def validate(self, attrs):
         project = self._get_project()

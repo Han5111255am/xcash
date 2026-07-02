@@ -89,9 +89,8 @@ class DepositService:
 
     @classmethod
     def try_match_deposit_transfer(cls, transfer: Transfer) -> bool:
-        if not transfer.crypto.active:
-            return False
-
+        # 停用币（Crypto.active=False）也要归类入账：链上资金已实收，记账事实
+        # 不能因运营停用而丢失；停用只挡新充币地址申请与商户 webhook 通知。
         if not VaultSlot.objects.filter(
             chain=transfer.chain,
             address=transfer.to_address,
@@ -107,8 +106,6 @@ class DepositService:
     def create_confirmed_deposit(cls, transfer: Transfer) -> Deposit | None:
         if transfer.status != TransferStatus.CONFIRMED:
             raise DepositStatusError("Deposit transfer must be confirmed")
-        if not transfer.crypto.active:
-            return None
 
         try:
             customer = VaultSlot.objects.get(
@@ -117,6 +114,16 @@ class DepositService:
                 usage=VaultSlotUsage.DEPOSIT,
             ).customer
         except VaultSlot.DoesNotExist:
+            # type=Deposit 由 DEPOSIT slot 命中归类而来，确认时 slot 消失属于
+            # 数据异常：Transfer 已 CONFIRMED 且不会重试，静默返回会造成
+            # 「链上有钱、账上无单」的对账黑洞，必须留下高等级告警供人工补账。
+            logger.exception(
+                "已确认的充值转账找不到对应 DEPOSIT VaultSlot，未建 Deposit，需人工补账",
+                transfer_id=transfer.pk,
+                chain=transfer.chain.code,
+                to_address=transfer.to_address,
+                tx_hash=transfer.hash,
+            )
             return None
 
         deposit, created = Deposit.objects.get_or_create(
@@ -137,7 +144,17 @@ class DepositService:
         except Exception:  # noqa
             logger.exception("调度 VaultSlot 归集任务失败", deposit_id=deposit.pk)
         db_transaction.on_commit(lambda: screen_deposit_aml.delay(deposit.pk))
-        cls.notify_completed(deposit)
+        if deposit.transfer.crypto.active:
+            cls.notify_completed(deposit)
+        else:
+            # 停用币充值：记账、AML、归集、SaaS 计费照常，仅跳过商户 webhook——
+            # 商户侧该币已下架，通知可能触发其自动上账逻辑。
+            logger.warning(
+                "停用币充值已入账，跳过商户 webhook 通知",
+                deposit_id=deposit.pk,
+                crypto=deposit.transfer.crypto.symbol,
+                chain=deposit.transfer.chain.code,
+            )
         send_saas_callback(
             SaasCallback(
                 event=CallbackEvent.DEPOSIT_CONFIRMED,

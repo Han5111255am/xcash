@@ -1325,6 +1325,11 @@ class VaultSlotCollectSchedule(models.Model):
             # 条件删除：仅在计划仍未绑定任务时释放该 pending 槽位。
             cls.objects.filter(pk=pk, tx_task__isnull=True).delete()
             return 0
+        if not cls.balance_worth_reaches_collect_threshold(
+            schedule=schedule,
+            balance=balance,
+        ):
+            return 0
         try:
             with db_transaction.atomic():
                 # 前置检查在锁外完成，拿锁后必须复核计划仍然 pending；
@@ -1349,6 +1354,51 @@ class VaultSlotCollectSchedule(models.Model):
             schedule.defer_retry()
             return 0
         return 1
+
+    @classmethod
+    def balance_worth_reaches_collect_threshold(
+        cls,
+        *,
+        schedule: VaultSlotCollectSchedule,
+        balance: VaultSlotBalance,
+    ) -> bool:
+        """执行前的最小归集价值门槛；低于阈值放弃本次归集（粉尘归集 gas 必亏）。
+
+        - 阈值为 0 视为不限制，直接放行。
+        - 价值必须按实时价格现算，不能用 balance.worth 快照：快照的 usd_amount
+          在价格源故障时降级为 0，会把正常金额误判成粉尘而误删计划。
+        - 缺价（PriceUnavailableError）按暂时性故障退避重试，等价格恢复再评估。
+        - 低于阈值时条件删除计划（与零余额同语义）：后续入账会重新 ensure_pending，
+          届时按累积后的总余额再评估，粉尘攒够总额自然放行。
+        """
+        from core.runtime_settings import get_vault_slot_collect_min_worth_usd
+        from currencies.models import PriceUnavailableError
+
+        threshold = get_vault_slot_collect_min_worth_usd()
+        if threshold <= 0:
+            return True
+
+        try:
+            worth = balance.amount * schedule.crypto.price("USD")
+        except PriceUnavailableError:
+            schedule.defer_retry()
+            return False
+
+        if worth >= threshold:
+            return True
+
+        logger.info(
+            "VaultSlot 归集计划余额价值低于最小归集阈值，放弃本次归集",
+            schedule_id=schedule.pk,
+            chain=schedule.chain.code,
+            crypto=schedule.crypto.symbol,
+            amount=str(balance.amount),
+            worth=str(worth),
+            threshold=str(threshold),
+        )
+        # 条件删除：仅在计划仍未绑定任务时释放该 pending 槽位。
+        cls.objects.filter(pk=schedule.pk, tx_task__isnull=True).delete()
+        return False
 
 
 class DepositVaultSlot(VaultSlot):

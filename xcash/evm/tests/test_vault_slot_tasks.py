@@ -212,6 +212,15 @@ def test_concurrent_schedule_deploy_reuses_single_task_for_same_slot():
 
 class VaultSlotAddressSchedulingTests(TestCase):
     def setUp(self):
+        # 本类聚焦调度/绑定语义，统一关闭最小归集价值门槛（专项行为见
+        # VaultSlotCollectMinWorthThresholdTests），既有用例的余额 mock 无需
+        # 提供 amount 与价格。
+        collect_threshold_patcher = patch(
+            "core.runtime_settings.get_vault_slot_collect_min_worth_usd",
+            return_value=Decimal("0"),
+        )
+        collect_threshold_patcher.start()
+        self.addCleanup(collect_threshold_patcher.stop)
         self.chain = make_evm_chain(
             code=ChainCode.Ethereum,
             rpc="http://vault-slot.local",
@@ -2021,3 +2030,120 @@ class VaultSlotAddressSchedulingTests(TestCase):
             customer=customer or self.customer,
             transfer=transfer,
         )
+
+
+class VaultSlotCollectMinWorthThresholdTests(TestCase):
+    """归集计划执行前的最小价值门槛（vault_slot_collect_min_worth_usd）行为。"""
+
+    def setUp(self):
+        self.chain = make_evm_chain(
+            code=ChainCode.Ethereum,
+            rpc="http://vault-slot-threshold.local",
+        )
+        self.project = Project.objects.create(name="Collect Threshold Project")
+        self.customer = Customer.objects.create(
+            project=self.project,
+            uid="collect-threshold-customer",
+        )
+        self.token = Crypto.objects.create(
+            name="Collect Threshold Token",
+            symbol="CTT",
+            prices={"USD": "1"},
+            coingecko_id="collect-threshold-token",
+        )
+        # is_deployed=True 让 can_create_collect_tx_task 直接放行，无需 RPC。
+        self.slot = VaultSlot.objects.create(
+            chain=self.chain,
+            usage=VaultSlotUsage.DEPOSIT,
+            customer=self.customer,
+            project=self.project,
+            address=Web3.to_checksum_address(
+                "0x0000000000000000000000000000000000000abc"
+            ),
+            salt=b"\x21" * 32,
+            is_deployed=True,
+        )
+
+    def make_schedule(self) -> VaultSlotCollectSchedule:
+        return VaultSlotCollectSchedule.objects.create(
+            chain=self.chain,
+            vault_slot=self.slot,
+            crypto=self.token,
+            due_at=timezone.now() - timedelta(seconds=1),
+        )
+
+    @staticmethod
+    def patch_threshold(value: str):
+        return patch(
+            "core.runtime_settings.get_vault_slot_collect_min_worth_usd",
+            return_value=Decimal(value),
+        )
+
+    def test_below_threshold_abandons_schedule_without_task(self):
+        # 低于阈值：放弃本次归集并释放 pending 槽位（与零余额同语义），
+        # 后续入账重新 ensure_pending 时按累积后的总余额再评估。
+        schedule = self.make_schedule()
+
+        with (
+            self.patch_threshold("5"),
+            patch(
+                "chains.vault_slot_balances.refresh_vault_slot_balance_safely",
+                return_value=SimpleNamespace(value=1, amount=Decimal("2")),
+            ),
+        ):
+            created_count = VaultSlotCollectSchedule.execute_due()
+
+        self.assertEqual(created_count, 0)
+        self.assertFalse(
+            VaultSlotCollectSchedule.objects.filter(pk=schedule.pk).exists()
+        )
+        self.assertFalse(
+            EvmTxTask.objects.filter(
+                base_task__tx_type=TxTaskType.VaultSlotCollect
+            ).exists()
+        )
+
+    def test_missing_price_defers_schedule_instead_of_deleting(self):
+        # 缺价是暂时性故障：绝不能把正常金额误判为粉尘删除计划，退避等价格恢复。
+        Crypto.objects.filter(pk=self.token.pk).update(prices={})
+        schedule = self.make_schedule()
+
+        with (
+            self.patch_threshold("5"),
+            patch(
+                "chains.vault_slot_balances.refresh_vault_slot_balance_safely",
+                return_value=SimpleNamespace(value=1, amount=Decimal("2")),
+            ),
+        ):
+            created_count = VaultSlotCollectSchedule.execute_due()
+
+        self.assertEqual(created_count, 0)
+        schedule.refresh_from_db()
+        self.assertIsNone(schedule.tx_task)
+        self.assertGreater(schedule.due_at, timezone.now())
+
+    def test_reaching_threshold_passes_check(self):
+        schedule = self.make_schedule()
+
+        with self.patch_threshold("5"):
+            passed = VaultSlotCollectSchedule.balance_worth_reaches_collect_threshold(
+                schedule=schedule,
+                balance=SimpleNamespace(value=1, amount=Decimal("10")),
+            )
+
+        self.assertTrue(passed)
+        self.assertTrue(
+            VaultSlotCollectSchedule.objects.filter(pk=schedule.pk).exists()
+        )
+
+    def test_zero_threshold_disables_check(self):
+        # 阈值为 0 视为不限制：直接放行，且不读取余额价值（balance 无 amount 也不报错）。
+        schedule = self.make_schedule()
+
+        with self.patch_threshold("0"):
+            passed = VaultSlotCollectSchedule.balance_worth_reaches_collect_threshold(
+                schedule=schedule,
+                balance=SimpleNamespace(value=1),
+            )
+
+        self.assertTrue(passed)

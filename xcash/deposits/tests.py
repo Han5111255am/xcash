@@ -69,15 +69,37 @@ class DepositServiceCoreTests(TestCase):
 
 
 class DepositCreationTests(TestCase):
-    def test_inactive_crypto_transfer_does_not_create_deposit(self):
-        transfer = SimpleNamespace(
-            chain=SimpleNamespace(type=ChainType.EVM),
-            crypto=SimpleNamespace(active=False),
-        )
+    def test_inactive_crypto_transfer_still_matches_deposit(self):
+        # 停用币的链上入账事实不能丢：仍归类为 Deposit 类型，
+        # 停用只影响新地址申请与商户 webhook 通知。
+        context = create_deposit_context()
+        Crypto.objects.filter(pk=context.transfer.crypto.pk).update(active=False)
+        context.transfer.crypto.refresh_from_db()
 
-        created = DepositService.try_match_deposit_transfer(transfer)
+        created = DepositService.try_match_deposit_transfer(context.transfer)
 
-        self.assertFalse(created)
+        self.assertTrue(created)
+        context.transfer.refresh_from_db()
+        self.assertEqual(context.transfer.type, TransferType.Deposit)
+
+    @patch("deposits.service.send_saas_callback")
+    @patch("deposits.service.WebhookService.create_event")
+    @patch.object(VaultSlot, "schedule_collect_for_deposit")
+    def test_inactive_crypto_confirmed_deposit_books_without_merchant_webhook(
+        self, schedule_collect, create_event_mock, send_saas_callback_mock
+    ):
+        # 停用币的已确认充值：建 Deposit 记账、照发 SaaS 计费回调，
+        # 但跳过商户 webhook（商户侧该币已下架）。
+        context = create_deposit_context()
+        Crypto.objects.filter(pk=context.transfer.crypto.pk).update(active=False)
+        context.transfer.crypto.refresh_from_db()
+
+        deposit = DepositService.create_confirmed_deposit(context.transfer)
+
+        self.assertIsNotNone(deposit)
+        self.assertTrue(Deposit.objects.filter(transfer=context.transfer).exists())
+        create_event_mock.assert_not_called()
+        send_saas_callback_mock.assert_called_once()
 
     @patch.object(VaultSlot, "schedule_collect_for_deposit")
     def test_try_match_deposit_transfer_does_not_create_deposit_or_schedule_collect(

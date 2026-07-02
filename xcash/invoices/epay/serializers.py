@@ -67,14 +67,6 @@ class EpaySubmitSerializer(serializers.Serializer):
                 "money must be a positive number string with at most 2 decimals."
             )
 
-        # 整数部分上限 24：Invoice.amount 是 max_digits=32 / decimal_places=8，
-        # 只能容纳 24 位整数。提前拦截，避免公开 submit 入口把合法签名请求打成 DB 500。
-        integer_part = value.split(".", 1)[0]
-        if len(integer_part) > 24:
-            raise serializers.ValidationError(
-                "Ensure that the integer part has no more than 24 digits."
-            )
-
         # 在 quantize 之前比较：当前正则限定 ≤ 2 位小数，quantize 是 no-op；
         # 但若未来正则放宽（例如允许 3 位），"0.005" 会被 quantize 成 "0.01" 绕过此校验。
         # 提前比较是面向未来的防线。
@@ -82,6 +74,14 @@ class EpaySubmitSerializer(serializers.Serializer):
         if money < Decimal("0.01"):
             raise serializers.ValidationError(
                 "Ensure this value is greater than or equal to 0.01."
+            )
+
+        # 上限与 native 协议 InvoiceCreateSerializer.amount 对齐（单笔 100 万）：
+        # 除防止天文数字干扰汇率换算外，Invoice.worth（max_digits=16/6，整数位
+        # 仅 10 位）在超大金额×汇率下会 DataError，合法签名请求也会被打成 500。
+        if money > Decimal("1000000"):
+            raise serializers.ValidationError(
+                "Ensure this value is less than or equal to 1000000."
             )
 
         # quantize 统一为两位小数 Decimal，以便 EpayOrder.money 与 Invoice.amount 落库一致。

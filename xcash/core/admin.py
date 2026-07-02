@@ -50,6 +50,7 @@ class SystemSettingsAdmin(ModelAdmin):
                 "fields": (
                     "evm_vault_slot_collect_delay_minutes",
                     "tron_vault_slot_collect_delay_minutes",
+                    "vault_slot_collect_min_worth_usd",
                     "invoice_vault_slot_limit_per_project_chain",
                 )
             },

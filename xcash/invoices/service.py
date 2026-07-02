@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from aml.tasks import screen_invoice_aml
+from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Q
@@ -42,6 +43,30 @@ logger = structlog.get_logger()
 
 # TRC20 转账 feeLimit 上限（单位 sun，100 TRX），够付绝大多数 TRC20 转账所需的能量/带宽。
 TRON_TRC20_FEE_LIMIT_SUN = 100_000_000
+
+INVOICE_PUBLIC_CACHE_KEY_PREFIX = "invoice:public:v1"
+INVOICE_PUBLIC_WAITING_CACHE_TTL = 2
+INVOICE_PUBLIC_NON_WAITING_CACHE_TTL = 60 * 60
+
+
+def invoice_public_cache_key(sys_no: str) -> str:
+    return f"{INVOICE_PUBLIC_CACHE_KEY_PREFIX}:{sys_no}"
+
+
+def invoice_public_cache_ttl(status_value: str) -> int:
+    if status_value == InvoiceStatus.WAITING:
+        return INVOICE_PUBLIC_WAITING_CACHE_TTL
+    return INVOICE_PUBLIC_NON_WAITING_CACHE_TTL
+
+
+def expire_invoice_public_cache_on_commit(sys_no: str) -> None:
+    """事务提交后失效公开详情缓存。
+
+    绑定链上付款、账单确认都可能发生在 EXPIRED 长 TTL 缓存期间（EXPIRED 不是
+    终局状态，迟到确认会翻 COMPLETED）；必须在提交后删除，若在事务内删除，
+    并发 retrieve 可能在提交前又把旧状态写回缓存，失效即丢失。
+    """
+    transaction.on_commit(lambda: cache.delete(invoice_public_cache_key(sys_no)))
 
 
 class InvoiceService:
@@ -175,6 +200,10 @@ class InvoiceService:
             )
         except Invoice.InvoiceAllocationError as exc:
             logger.warning("initialize_invoice allocation failed", detail=str(exc))
+        except InvoiceStatusError as exc:
+            # 创建即初始化的账单理论上必为 WAITING 且未绑定付款；此分支仅防御
+            # select_method 锁内状态复查的意外抛出，避免账单创建请求被打成 500。
+            logger.warning("initialize_invoice status recheck failed", detail=str(exc))
 
     @staticmethod
     def schedule_expiration_check(invoice: Invoice) -> None:
@@ -559,6 +588,8 @@ class InvoiceService:
         )
         invoice.refresh_from_db()
 
+        expire_invoice_public_cache_on_commit(invoice.sys_no)
+
         return True
 
     @staticmethod
@@ -635,6 +666,8 @@ class InvoiceService:
             updated_at=timezone.now(),
         )
         invoice.refresh_from_db()
+
+        expire_invoice_public_cache_on_commit(invoice.sys_no)
 
         cls.schedule_collection_if_needed(invoice)
         transaction.on_commit(lambda: screen_invoice_aml.delay(invoice.pk))

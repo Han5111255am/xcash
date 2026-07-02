@@ -244,6 +244,66 @@ class InvoicePaymentSelectionTests(TestCase):
         self.assertEqual(invoice.pay_address, first_pay_address)
         self.assertEqual(invoice.pay_amount, first_pay_amount)
 
+    def test_select_method_lock_recheck_rejects_bound_invoice(self):
+        # TOCTOU 防护：viewset 预检后账单可能被扫链绑定 Transfer；
+        # select_method 锁内必须复核并拒绝，否则已收款账单的支付指引被覆盖，
+        # webhook 报错币种、归集调度指向错误地址。
+        invoice = self.create_invoice(out_no="lock-recheck-bound")
+        invoice.select_method(self.crypto, self.chain_a)
+        bound_chain_id = invoice.chain_id
+        transfer = self.create_transfer(
+            chain=self.chain_a,
+            pay_amount=invoice.pay_amount,
+            pay_address=invoice.pay_address,
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(transfer=transfer)
+
+        with self.assertRaises(InvoiceStatusError):
+            invoice.select_method(self.crypto, self.chain_b)
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.chain_id, bound_chain_id)
+        self.assertEqual(invoice.transfer_id, transfer.pk)
+
+    def test_select_method_lock_recheck_rejects_completed_invoice(self):
+        # 绑定 + 确认（QUICK 模式毫秒级）可能整体发生在预检与拿锁之间，
+        # COMPLETED 账单的支付指引同样不允许被涂改。
+        invoice = self.create_invoice(out_no="lock-recheck-completed")
+        invoice.select_method(self.crypto, self.chain_a)
+        Invoice.objects.filter(pk=invoice.pk).update(status=InvoiceStatus.COMPLETED)
+
+        with self.assertRaises(InvoiceStatusError):
+            invoice.select_method(self.crypto, self.chain_b)
+
+    def test_select_method_lock_recheck_rejects_expired_window(self):
+        # expires_at 复查同样收口在行锁内，杜绝预检与拿锁之间跨过过期时刻。
+        invoice = self.create_invoice(out_no="lock-recheck-expired")
+        Invoice.objects.filter(pk=invoice.pk).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
+
+        with self.assertRaises(InvoiceStatusError):
+            invoice.select_method(self.crypto, self.chain_a)
+
+    def test_bind_transfer_expires_public_cache(self):
+        # 绑定链上付款可能发生在 EXPIRED 长 TTL 缓存期间，
+        # 提交后必须失效公开详情缓存，让支付页立即看到 payment。
+        invoice = self.create_invoice(out_no="bind-cache-expire")
+        invoice.select_method(self.crypto, self.chain_a)
+        transfer = self.create_transfer(
+            chain=self.chain_a,
+            pay_amount=invoice.pay_amount,
+            pay_address=invoice.pay_address,
+        )
+        cache_key = invoice_public_cache_key(invoice.sys_no)
+        cache.set(cache_key, {"status": InvoiceStatus.EXPIRED}, timeout=3600)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            matched = InvoiceService.try_match_invoice(transfer)
+
+        self.assertTrue(matched)
+        self.assertIsNone(cache.get(cache_key))
+
     def test_try_match_invoice_rejects_previous_payment_after_switch(self):
         # 旧支付方式不再作为账单入口；用户切换后打到旧链/旧指引，不自动命中该账单。
         invoice = self.create_invoice(out_no="payment-match")
@@ -634,6 +694,89 @@ class InvoiceDuplicateOutNoTests(TestCase):
             ),
         ):
             response = InvoiceViewSet.as_view({"post": "create"})(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], ErrorCode.DUPLICATE_OUT_NO.code)
+
+    def _idempotency_fixtures(self, **invoice_overrides):
+        project = Project.objects.create(name="IdempotentInvoiceProject")
+        Fiat.objects.get_or_create(code="USD")
+        defaults = {
+            "project": project,
+            "out_no": "idem-order",
+            "title": "Idempotent",
+            "currency_id": "USD",
+            "amount": Decimal("10"),
+            "methods": {},
+            "notify_url": "https://merchant.example.com/notify",
+            "return_url": "",
+            "expires_at": timezone.now() + timedelta(minutes=10),
+        }
+        defaults.update(invoice_overrides)
+        existing = Invoice.objects.create(**defaults)
+        return project, existing
+
+    def _create_with_stub_serializer(self, project, validated_data):
+        request = APIRequestFactory().post(
+            "/v1/invoice",
+            {},
+            format="json",
+            HTTP_XC_APPID=project.appid,
+        )
+        serializer = SimpleNamespace(
+            is_valid=Mock(return_value=True),
+            validated_data=validated_data,
+            errors={},
+        )
+        with patch.object(InvoiceViewSet, "get_serializer", return_value=serializer):
+            return InvoiceViewSet.as_view({"post": "create"})(request)
+
+    def _matching_validated_data(self):
+        return {
+            "out_no": "idem-order",
+            "title": "Idempotent",
+            "currency": "USD",
+            "amount": Decimal("10"),
+            "methods": {},
+            "duration": 10,
+            "notify_url": "https://merchant.example.com/notify",
+            "return_url": "",
+        }
+
+    def test_create_is_idempotent_when_out_no_and_params_match(self):
+        # 同 out_no 且关键参数全等视为同一请求的重试：返回已有账单而非报错，
+        # 覆盖「首次响应丢失后商户重发」的场景。
+        project, existing = self._idempotency_fixtures()
+
+        response = self._create_with_stub_serializer(
+            project, self._matching_validated_data()
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["sys_no"], existing.sys_no)
+        self.assertEqual(Invoice.objects.filter(project=project).count(), 1)
+
+    def test_create_rejects_out_no_reuse_with_different_params(self):
+        # 同 out_no 但参数已变（如金额）不是重试而是商户侧冲突，
+        # 静默返回旧账单会掩盖 bug，必须报 DUPLICATE_OUT_NO。
+        project, _existing = self._idempotency_fixtures()
+        changed = self._matching_validated_data()
+        changed["amount"] = Decimal("11")
+
+        response = self._create_with_stub_serializer(project, changed)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["code"], ErrorCode.DUPLICATE_OUT_NO.code)
+
+    def test_create_rejects_out_no_reuse_across_protocol(self):
+        # EPay 建的账单共用 out_no 命名空间，即便参数全等也不跨协议幂等返回。
+        project, _existing = self._idempotency_fixtures(
+            protocol=InvoiceProtocol.EPAY_V1
+        )
+
+        response = self._create_with_stub_serializer(
+            project, self._matching_validated_data()
+        )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["code"], ErrorCode.DUPLICATE_OUT_NO.code)
@@ -1190,6 +1333,58 @@ class InvoiceConfirmStatusTests(TestCase):
             "https://merchant.example.com/invoice-notify",
         )
 
+    @patch("invoices.service.send_saas_callback")
+    @patch("invoices.service.WebhookService.create_event")
+    def test_confirm_invoice_expires_public_cache(
+        self, _create_event_mock, _callback_mock
+    ):
+        # EXPIRED 不是终局状态：迟到确认翻 COMPLETED 时必须失效公开缓存，
+        # 否则支付页最长按非 WAITING TTL（1 小时）继续显示"已超时"。
+        invoice = Invoice.objects.create(
+            project=self.project,
+            out_no="status-cache-expire",
+            title="Status cache expire",
+            currency_id="USD",
+            amount=Decimal("10"),
+            methods={},
+            status=InvoiceStatus.EXPIRED,
+            protocol=InvoiceProtocol.NATIVE,
+            crypto=self.crypto,
+            chain=self.chain,
+            pay_address=Web3.to_checksum_address(
+                "0x0000000000000000000000000000000000000A03"
+            ),
+            pay_amount=Decimal("10"),
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+        transfer = Transfer.objects.create(
+            chain=self.chain,
+            block=1,
+            block_hash="0x" + "aa" * 32,
+            hash="0x" + "a2" * 32,
+            crypto=self.crypto,
+            from_address=Web3.to_checksum_address(
+                "0x0000000000000000000000000000000000000A02"
+            ),
+            to_address=invoice.pay_address,
+            value=Decimal("1000000000"),
+            amount=invoice.pay_amount,
+            status=TransferStatus.CONFIRMED,
+            timestamp=int(timezone.now().timestamp()),
+            datetime=timezone.now(),
+        )
+        Invoice.objects.filter(pk=invoice.pk).update(transfer=transfer)
+        invoice.refresh_from_db()
+        cache_key = invoice_public_cache_key(invoice.sys_no)
+        cache.set(cache_key, {"status": InvoiceStatus.EXPIRED}, timeout=3600)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            InvoiceService.confirm_invoice(invoice)
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.COMPLETED)
+        self.assertIsNone(cache.get(cache_key))
+
 
 class InvoiceWebhookPayloadTests(TestCase):
     """build_webhook_payload 边界测试：crypto/pay_amount 为 None 时不应崩溃。"""
@@ -1348,10 +1543,14 @@ class FallbackInvoiceExpiredTests(TestCase):
             currency_id="USD",
             amount=Decimal("10"),
             methods={"USDTF": [ChainCode.Ethereum]},
-            # 设置过去的过期时间
-            expires_at=timezone.now() - timedelta(minutes=1),
+            expires_at=timezone.now() + timedelta(minutes=10),
         )
         invoice.select_method(self.crypto, self.chain)
+        # 分配支付指引后再把账单推成过期，贴近真实时序
+        # （select_method 锁内会拒绝已过期账单）。
+        Invoice.objects.filter(pk=invoice.pk).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
 
         fallback_invoice_expired()
 
@@ -1367,9 +1566,13 @@ class FallbackInvoiceExpiredTests(TestCase):
             currency_id="USD",
             amount=Decimal("10"),
             methods={"USDTF": [ChainCode.Ethereum]},
-            expires_at=timezone.now() - timedelta(minutes=1),
+            expires_at=timezone.now() + timedelta(minutes=10),
         )
         invoice.select_method(self.crypto, self.chain)
+        # 同上：先分配支付指引，再把账单推成过期。
+        Invoice.objects.filter(pk=invoice.pk).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
         transfer = Transfer.objects.create(
             chain=self.chain,
             block=1,

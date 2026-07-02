@@ -70,6 +70,17 @@ class SystemSettings(models.Model):
             "Tron 归集成本高，默认长延迟批量摊薄。"
         ),
     )
+    vault_slot_collect_min_worth_usd = models.DecimalField(
+        _("VaultSlot 最小归集价值(USD)"),
+        max_digits=16,
+        decimal_places=6,
+        default=Decimal("1"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text=_(
+            "归集计划到期执行时，槽位该币种余额价值低于该阈值则放弃本次归集"
+            "（粉尘归集 gas 必亏；后续入账使总额达标后会再次调度）。0 表示不限制。"
+        ),
+    )
     invoice_vault_slot_limit_per_project_chain = models.PositiveIntegerField(
         _("账单 VaultSlot 单项目单链上限"),
         default=100,

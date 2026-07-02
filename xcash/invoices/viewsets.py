@@ -23,29 +23,23 @@ from common.throttles import InvoiceSelectMethodThrottle
 from currencies.service import CryptoService
 from projects.models import Project
 
+from .exceptions import InvoiceStatusError
 from .models import Invoice
+from .models import InvoiceProtocol
 from .models import InvoiceStatus
 from .serializers import InvoiceCreateSerializer
 from .serializers import InvoiceDisplaySerializer
 from .serializers import InvoicePublicSerializer
 from .serializers import InvoiceSetCryptoChainSerializer
+from .service import (
+    INVOICE_PUBLIC_NON_WAITING_CACHE_TTL,  # noqa: F401  向后兼容 re-export
+)
+from .service import INVOICE_PUBLIC_WAITING_CACHE_TTL  # noqa: F401  向后兼容 re-export
 from .service import InvoiceService
+from .service import invoice_public_cache_key
+from .service import invoice_public_cache_ttl
 
 logger = structlog.get_logger()
-
-INVOICE_PUBLIC_CACHE_KEY_PREFIX = "invoice:public:v1"
-INVOICE_PUBLIC_WAITING_CACHE_TTL = 2
-INVOICE_PUBLIC_NON_WAITING_CACHE_TTL = 60 * 60
-
-
-def invoice_public_cache_key(sys_no: str) -> str:
-    return f"{INVOICE_PUBLIC_CACHE_KEY_PREFIX}:{sys_no}"
-
-
-def invoice_public_cache_ttl(status_value: str) -> int:
-    if status_value == InvoiceStatus.WAITING:
-        return INVOICE_PUBLIC_WAITING_CACHE_TTL
-    return INVOICE_PUBLIC_NON_WAITING_CACHE_TTL
 
 
 def plain_cache_data(value):
@@ -127,11 +121,19 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             raise APIError(ErrorCode.PARAMETER_ERROR, detail=serializer.errors)
         validated_data = serializer.validated_data
 
+        project = Project.retrieve(appid=request.headers.get(APPID_HEADER))  # noqa
+
+        existing = Invoice.objects.filter(
+            project=project, out_no=validated_data["out_no"]
+        ).first()
+        if existing is not None:
+            return self.idempotent_existing_invoice_response(
+                request, existing, validated_data
+            )
+
         try:
             invoice = Invoice.objects.create(
-                project=Project.retrieve(
-                    appid=request.headers.get(APPID_HEADER)  # noqa
-                ),
+                project=project,
                 out_no=validated_data["out_no"],
                 title=validated_data["title"],
                 currency_id=validated_data["currency"],
@@ -143,10 +145,18 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 + timedelta(minutes=validated_data["duration"]),
             )
         except IntegrityError as exc:
-            # 重复 out_no 的最终幂等边界在数据库，命中唯一约束时要返回稳定业务错误码。
-            raise APIError(
-                ErrorCode.DUPLICATE_OUT_NO, detail=validated_data["out_no"]
-            ) from exc
+            # 与并发创建撞唯一约束：重查后按同一幂等口径处理，避免商户
+            # 并发重试时一个 201 一个 4xx 的不稳定语义。
+            existing = Invoice.objects.filter(
+                project=project, out_no=validated_data["out_no"]
+            ).first()
+            if existing is None:
+                raise APIError(
+                    ErrorCode.DUPLICATE_OUT_NO, detail=validated_data["out_no"]
+                ) from exc
+            return self.idempotent_existing_invoice_response(
+                request, existing, validated_data
+            )
         # 账单初始化副作用显式走 service，替代隐式 post_save signal。
         InvoiceService.initialize_invoice(invoice)
 
@@ -158,6 +168,38 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 },
             ).data,
             status=status.HTTP_201_CREATED,
+        )
+
+    @staticmethod
+    def invoice_matches_create_request(invoice: Invoice, validated_data: dict) -> bool:
+        """条件幂等的判据：关键商务参数与已有账单全等才视为同一请求的重试。
+
+        duration/expires_at 与 methods 不参与比较：前者随请求时间天然漂移，
+        后者是项目可用方法收敛的结果，项目配置变更会让合法重试失配。
+        协议必须是 NATIVE——EPay 建的账单共用 out_no 命名空间，不能跨协议幂等返回。
+        """
+        return (
+            invoice.protocol == InvoiceProtocol.NATIVE
+            and invoice.title == validated_data["title"]
+            and invoice.currency_id == validated_data["currency"]
+            and invoice.amount == validated_data["amount"]
+            and invoice.notify_url == validated_data.get("notify_url", "")
+            and invoice.return_url == validated_data.get("return_url", "")
+        )
+
+    def idempotent_existing_invoice_response(
+        self, request, existing: Invoice, validated_data: dict
+    ) -> Response:
+        """out_no 已存在时的条件幂等：参数一致返回已有账单，不一致报重复单号。
+
+        无条件返回会让「同 out_no 但金额/币种/回调已变」的请求静默拿到旧账单，
+        掩盖商户侧 bug；报错则保留了真正冲突的可见性。
+        """
+        if not self.invoice_matches_create_request(existing, validated_data):
+            raise APIError(ErrorCode.DUPLICATE_OUT_NO, detail=existing.out_no)
+        return Response(
+            InvoiceDisplaySerializer(existing, context={"request": request}).data,
+            status=status.HTTP_200_OK,
         )
 
     @action(methods=["post"], detail=True, url_path="select-method")
@@ -191,6 +233,11 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
         try:
             invoice.select_method(crypto, chain)
+        except InvoiceStatusError as exc:
+            # 锁内状态复查失败：预检之后账单已绑定链上付款/完成/过期，
+            # 拒绝切换，避免覆盖已收款账单的支付指引。
+            logger.warning("select_method rejected by status recheck", detail=str(exc))
+            raise APIError(ErrorCode.INVALID_INVOICE_STATUS) from exc
         except Invoice.InvoiceAllocationError as exc:
             # 不透传异常内部信息给 API 调用方，避免泄露 project/crypto/chain 等内部标识。
             logger.warning("select_method allocation failed", detail=str(exc))

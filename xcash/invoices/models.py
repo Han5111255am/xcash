@@ -29,6 +29,7 @@ from projects.models import InvoiceReceivingMode
 from projects.models import Project
 
 from .exceptions import InvoiceAllocationError
+from .exceptions import InvoiceStatusError
 
 if TYPE_CHECKING:
     from chains.models import Chain
@@ -485,6 +486,17 @@ class Invoice(models.Model):
         # 先锁账单行，保证同一账单的多次切链/切币只能留下一个当前支付指引。
         Invoice.objects.select_for_update().get(pk=self.pk)
         self.refresh_from_db()
+
+        # 调用方（viewset）的状态预检在锁外，与扫链绑定（try_match_invoice）存在
+        # TOCTOU 窗口：预检通过后账单可能已绑定 Transfer 甚至已 COMPLETED。
+        # 必须在行锁内以最新提交复核，否则会覆盖已收款账单的支付指引，导致
+        # webhook/回调报错币种、归集调度指向错误地址。
+        if self.status != InvoiceStatus.WAITING or self.transfer_id is not None:
+            raise InvoiceStatusError(
+                f"Invoice must be waiting without transfer, {self.sys_no}"
+            )
+        if self.expires_at < timezone.now():
+            raise InvoiceStatusError(f"Invoice expired, {self.sys_no}")
 
         if (
             self.crypto_id == crypto.id

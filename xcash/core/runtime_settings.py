@@ -81,6 +81,15 @@ def get_vault_slot_collect_delay(chain_type: str) -> timedelta:
     return timedelta(minutes=fallback_minutes_by_type[chain_type])
 
 
+def get_vault_slot_collect_min_worth_usd() -> Decimal:
+    # 归集计划执行时的最小价值门槛；0 表示不限制。默认 1 USD：低于该值的
+    # 归集在任何链上都必然亏 gas，粉尘等后续入账攒够总额再归集。
+    system_settings = get_system_settings()
+    if system_settings is not None:
+        return Decimal(system_settings.vault_slot_collect_min_worth_usd)
+    return Decimal("1")
+
+
 def get_invoice_vault_slot_limit_per_project_chain() -> int:
     system_settings = get_system_settings()
     if system_settings is not None:
