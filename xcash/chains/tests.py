@@ -1102,7 +1102,8 @@ class VaultSlotReceivedFlagTests(TestCase):
         )
         self.assertEqual(balance.value, Decimal("1234567"))
         self.assertEqual(balance.amount, Decimal("1.234567"))
-        self.assertEqual(balance.worth, Decimal("2.469134"))
+        # worth 字段精度为 4 位小数，链上真值精确存于 value；派生的 USD 快照按 4 位落库
+        self.assertEqual(balance.worth, Decimal("2.4691"))
         self.assertEqual(balance.synced_block_number, transfer.block)
         self.assertEqual(balance.last_tx_hash, transfer.hash)
 

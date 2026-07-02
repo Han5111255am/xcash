@@ -1035,7 +1035,8 @@ class TronTxTaskBroadcastResourceGuardTests(TestCase):
 
         broadcast.assert_not_called()
         task.base_task.refresh_from_db()
-        self.assertEqual(task.base_task.status, TxTaskStatus.SUBMITTED)
+        # Tron confirm_block_count=0，固化块即终局；recover 到已成功回执直接推进终态
+        self.assertEqual(task.base_task.status, TxTaskStatus.SUCCEEDED)
         self.assertEqual(task.base_task.tx_hash, tx_hash)
 
     @patch("tron.tasks.cache")
