@@ -222,6 +222,32 @@ class TronAdapterTests(SimpleTestCase):
         )
 
     @patch("tron.adapter.TronHttpClient")
+    def test_tx_result_respects_top_level_failed_result_without_receipt_result(
+        self, client_cls
+    ):
+        from tron.adapter import TronAdapter
+
+        client = client_cls.return_value
+        client.get_transaction_info_by_id.return_value = {
+            "id": "a" * 64,
+            "blockNumber": 123,
+            "result": "FAILED",
+            "receipt": {"net_usage": 268},
+        }
+        client.get_solid_block_id.return_value = "b" * 64
+
+        result = TronAdapter().tx_result(SimpleNamespace(code="tron"), "a" * 64)
+
+        self.assertEqual(
+            result,
+            TxCheckResult(
+                status=TxCheckStatus.FAILED,
+                block_number=123,
+                block_hash="b" * 64,
+            ),
+        )
+
+    @patch("tron.adapter.TronHttpClient")
     def test_tx_result_without_result_and_block_number_stays_missing(self, client_cls):
         from tron.adapter import TronAdapter
 
@@ -1601,15 +1627,19 @@ class TronScannerTests(TestCase):
         block_number: int = 123456,
         timestamp_ms: int = 1_700_000_000_000,
         receipt_result: str = "SUCCESS",
+        top_level_result: str | None = None,
     ) -> dict:
         """构造 walletsolidity/gettransactioninfobyblocknum 的单条 TransactionInfo。"""
-        return {
+        payload = {
             "id": tx_id,
             "blockNumber": block_number,
             "blockTimeStamp": timestamp_ms,
             "receipt": {"result": receipt_result},
             "log": logs,
         }
+        if top_level_result is not None:
+            payload["result"] = top_level_result
+        return payload
 
     @override_settings(DEBUG=False)
     @patch("tron.scanner.TronHttpClient")
@@ -1933,6 +1963,48 @@ class TronScannerTests(TestCase):
         self.assertEqual(transfer.event_index, 0)
         self.assertEqual(transfer.amount, Decimal("1.234567"))
         enqueue_processing_mock.assert_called_once()
+
+    @patch("chains.service.TransferService.enqueue_processing")
+    @patch("tron.scanner.TronHttpClient")
+    def test_scan_chain_skips_top_level_failed_trc20_transaction_info(
+        self,
+        client_cls,
+        enqueue_processing_mock,
+    ):
+        from tron.scanner import TronScanner
+
+        VaultSlot.objects.create(
+            chain=self.chain,
+            project=self.project,
+            usage=VaultSlotUsage.INVOICE,
+            invoice_index=0,
+            address=self.watch_address,
+            salt=b"a" * 32,
+        )
+        self._set_cursor_block(last_scanned_block=123455)
+        client = client_cls.return_value
+        client.get_latest_solid_block_number.return_value = 123456
+        client.get_solid_block_id.return_value = "0" * 64
+        client.get_transaction_infos_by_block.return_value = [
+            self._transaction_info(
+                tx_id="7" * 64,
+                receipt_result="",
+                top_level_result="FAILED",
+                logs=[
+                    self._trc20_transfer_log(
+                        to_address=self.watch_address,
+                        value=1_234_567,
+                    )
+                ],
+            )
+        ]
+
+        summary = TronScanner.scan_chain(chain=self.chain)
+
+        self.assertEqual(summary.events_seen, 0)
+        self.assertEqual(summary.filter_addresses, 0)
+        self.assertFalse(Transfer.objects.filter(hash="7" * 64).exists())
+        enqueue_processing_mock.assert_not_called()
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")

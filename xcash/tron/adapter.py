@@ -98,6 +98,13 @@ class TronAdapter(AdapterInterface):
             client=client,
             block_number=block_number,
         )
+        top_level_result = str(payload.get("result") or "").upper()
+        if top_level_result and top_level_result != "SUCCESS":
+            return TxCheckResult(
+                status=TxCheckStatus.FAILED,
+                block_number=block_number,
+                block_hash=block_hash,
+            )
         result = receipt.get("result")
         # 原生 TRX TransferContract 成功回执可能没有 result；tx 已入块即视为成功。
         if result in (None, "", "SUCCESS"):

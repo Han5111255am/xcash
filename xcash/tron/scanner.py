@@ -529,6 +529,9 @@ class TronScanner:
             return []
         if block_number != expected_block_number or timestamp_ms <= 0:
             return []
+        top_level_result = str(info.get("result") or "").upper()
+        if top_level_result and top_level_result != "SUCCESS":
+            return []
         # revert 的交易不会留下有效事件；以 receipt.result 为准过滤非成功交易。
         receipt = info.get("receipt") or {}
         if isinstance(receipt, dict):
