@@ -529,8 +529,12 @@ class TronScanner:
             return []
         if block_number != expected_block_number or timestamp_ms <= 0:
             return []
+        # TransactionInfo.result 枚举只有 SUCESS（协议原文拼写，少一个 C）/FAILED
+        # 两值，java-tron 按 proto3 语义对成功（默认值）省略该字段；只认 FAILED
+        # （或数字枚举 1）为失败，防 include-defaults 网关输出 "SUCESS" 时整链
+        # 静默漏账。
         top_level_result = str(info.get("result") or "").upper()
-        if top_level_result and top_level_result != "SUCCESS":
+        if top_level_result in ("FAILED", "1"):
             return []
         # revert 的交易不会留下有效事件；以 receipt.result 为准过滤非成功交易。
         receipt = info.get("receipt") or {}

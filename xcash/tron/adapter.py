@@ -98,8 +98,12 @@ class TronAdapter(AdapterInterface):
             client=client,
             block_number=block_number,
         )
+        # TransactionInfo.result 枚举只有 SUCESS（协议原文拼写，少一个 C）/FAILED
+        # 两值，java-tron 按 proto3 语义对成功（默认值）省略该字段；只认 FAILED
+        # （或数字枚举 1）为失败，防 include-defaults 网关输出 "SUCESS" 时把成功
+        # 交易误判失败。
         top_level_result = str(payload.get("result") or "").upper()
-        if top_level_result and top_level_result != "SUCCESS":
+        if top_level_result in ("FAILED", "1"):
             return TxCheckResult(
                 status=TxCheckStatus.FAILED,
                 block_number=block_number,

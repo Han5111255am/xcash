@@ -248,6 +248,32 @@ class TronAdapterTests(SimpleTestCase):
         )
 
     @patch("tron.adapter.TronHttpClient")
+    def test_tx_result_treats_top_level_sucess_enum_as_success(self, client_cls):
+        from tron.adapter import TronAdapter
+
+        client = client_cls.return_value
+        # include-defaults 网关会把 TransactionInfo.result 默认值序列化为协议
+        # 原文拼写 "SUCESS"（少一个 C），必须视为成功而非失败。
+        client.get_transaction_info_by_id.return_value = {
+            "id": "a" * 64,
+            "blockNumber": 123,
+            "result": "SUCESS",
+            "receipt": {"result": "SUCCESS"},
+        }
+        client.get_solid_block_id.return_value = "b" * 64
+
+        result = TronAdapter().tx_result(SimpleNamespace(code="tron"), "a" * 64)
+
+        self.assertEqual(
+            result,
+            TxCheckResult(
+                status=TxCheckStatus.SUCCEEDED,
+                block_number=123,
+                block_hash="b" * 64,
+            ),
+        )
+
+    @patch("tron.adapter.TronHttpClient")
     def test_tx_result_without_result_and_block_number_stays_missing(self, client_cls):
         from tron.adapter import TronAdapter
 
@@ -2006,6 +2032,50 @@ class TronScannerTests(TestCase):
         self.assertEqual(summary.filter_addresses, 0)
         self.assertFalse(Transfer.objects.filter(hash="7" * 64).exists())
         enqueue_processing_mock.assert_not_called()
+
+    @patch("chains.service.TransferService.enqueue_processing")
+    @patch("tron.scanner.TronHttpClient")
+    def test_scan_chain_accepts_top_level_sucess_enum_trc20_transaction_info(
+        self,
+        client_cls,
+        enqueue_processing_mock,
+    ):
+        from tron.scanner import TronScanner
+
+        VaultSlot.objects.create(
+            chain=self.chain,
+            project=self.project,
+            usage=VaultSlotUsage.INVOICE,
+            invoice_index=0,
+            address=self.watch_address,
+            salt=b"a" * 32,
+        )
+        self._set_cursor_block(last_scanned_block=123455)
+        client = client_cls.return_value
+        client.get_latest_solid_block_number.return_value = 123456
+        client.get_solid_block_id.return_value = "0" * 64
+        # include-defaults 网关会把 TransactionInfo.result 默认值序列化为协议
+        # 原文拼写 "SUCESS"（少一个 C），充值必须正常入账而不能被判失败跳过。
+        client.get_transaction_infos_by_block.return_value = [
+            self._transaction_info(
+                tx_id="8" * 64,
+                top_level_result="SUCESS",
+                logs=[
+                    self._trc20_transfer_log(
+                        to_address=self.watch_address,
+                        value=1_234_567,
+                    )
+                ],
+            )
+        ]
+
+        summary = TronScanner.scan_chain(chain=self.chain)
+
+        self.assertEqual(summary.events_seen, 1)
+        self.assertEqual(summary.filter_addresses, 1)
+        transfer = Transfer.objects.get(hash="8" * 64)
+        self.assertEqual(transfer.amount, Decimal("1.234567"))
+        enqueue_processing_mock.assert_called_once()
 
     @patch("chains.service.TransferService.enqueue_processing")
     @patch("tron.scanner.TronHttpClient")
