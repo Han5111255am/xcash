@@ -5,9 +5,9 @@ import process from "node:process"
 import { fileURLToPath, URL } from 'node:url'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
-  base: '/static/pay/',
+  base: command === 'build' ? '/static/pay/' : '/',
   server: {
     proxy: {
       '/v1': {
@@ -30,4 +30,4 @@ export default defineConfig({
       "@": fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-})
+}))
