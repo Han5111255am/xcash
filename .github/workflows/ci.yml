@@ -47,7 +47,6 @@ jobs:
           --health-retries 5
 
     env:
-      DJANGO_SETTINGS_MODULE: config.settings.test
       POSTGRES_DB: xcash
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -80,10 +79,16 @@ jobs:
         run: uv run ruff check .
 
       - name: Check migrations
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.dev
         run: ./scripts/dev-manage.sh makemigrations --check --dry-run
 
       - name: Lint migrations
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.dev
         run: ./scripts/dev-lint-migrations.sh
 
       - name: Pytest
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.test
         run: uv run pytest --create-db --nomigrations -q
