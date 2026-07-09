@@ -46,7 +46,7 @@ Fixes #
 请填写实际执行过的命令和结果；未执行的项目请说明原因。
 
 - [ ] `uv run ruff check .`
-- [ ] `uv run mypy .`
+- [ ] `uv run mypy .`（当前依赖兼容后执行）
 - [ ] `uv run pytest -q`
 - [ ] `uv run pre-commit run --all-files`
 - [ ] Docker Compose 部署 / 启动验证
