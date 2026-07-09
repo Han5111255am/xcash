@@ -18,6 +18,6 @@ def payment_view(request, sys_no):
         content = index_html.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise Http404(
-            "支付前端尚未构建，请执行 scripts/build-pay-fronted.sh。"
+            "支付前端尚未构建，请执行 python scripts/build_pay_fronted.py 或 scripts/build-pay-fronted.sh。"
         ) from exc
     return HttpResponse(content, content_type="text/html; charset=utf-8")
