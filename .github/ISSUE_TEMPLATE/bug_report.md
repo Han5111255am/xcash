@@ -24,7 +24,7 @@ What should have happened.
 
 - **Xcash version** (commit SHA or release tag):
 - **Deployment**: Docker / Manual
-- **Chains configured**: 
+- **Chains configured**:
 - **Performance mode**: low / medium / high
 - **OS**: Ubuntu / Debian / Other
 

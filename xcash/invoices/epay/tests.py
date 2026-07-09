@@ -963,14 +963,14 @@ class EpaySubmitRouteTests(TestCase):
         first = self.client.post(
             "/epay/submit.php",
             data=self._signed_params(out_trade_no="EPAY-RATELIMIT-1"),
-            HTTP_X_FORWARDED_FOR=attacker_ip,
+            headers={"x-forwarded-for": attacker_ip}
         )
         self.assertEqual(first.status_code, 302)
 
         second = self.client.post(
             "/epay/submit.php",
             data=self._signed_params(out_trade_no="EPAY-RATELIMIT-2"),
-            HTTP_X_FORWARDED_FOR=attacker_ip,
+            headers={"x-forwarded-for": attacker_ip}
         )
         self.assertEqual(second.status_code, 302)
 
@@ -979,7 +979,7 @@ class EpaySubmitRouteTests(TestCase):
         third = self.client.post(
             "/epay/submit.php",
             data=self._signed_params(out_trade_no="EPAY-RATELIMIT-3"),
-            HTTP_X_FORWARDED_FOR=attacker_ip,
+            headers={"x-forwarded-for": attacker_ip}
         )
         self.assertEqual(third.status_code, 429)
         # 限流必须在进入业务逻辑之前生效，不能空打一次 InvoiceService。
