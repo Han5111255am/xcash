@@ -15,7 +15,7 @@ services:
     container_name: xcash_dev_db
     restart: unless-stopped
     env_file:
-      - .env
+      - ${ENV_FILE:-.env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
