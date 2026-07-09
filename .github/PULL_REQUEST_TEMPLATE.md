@@ -1,29 +1,61 @@
-## Description
+## 变更说明
 
-Please include a summary of the change and which issue is fixed.
+请说明本次变更目标、影响范围，以及关联 issue。
 
-Fixes #(issue)
+Fixes #
 
-## Type of Change
+## 变更类型
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Documentation update
-- [ ] Performance improvement
-- [ ] Code refactoring
+- [ ] 缺陷修复
+- [ ] 新功能
+- [ ] 上游同步
+- [ ] 迁移 / 配置 / 部署
+- [ ] 性能优化
+- [ ] 重构
+- [ ] 文档更新
 
-## How Has This Been Tested?
+## Fork / 上游同步信息
 
-- [ ] Docker Compose deployment
-- [ ] API endpoint testing
-- [ ] Chain interaction test
+仅上游同步类 PR 必填：
 
-## Checklist
+- 上游来源：`upstream/main`
+- 上游 commit / tag：
+- 同步分支：`sync/upstream-YYYY-MM-DD`
+- 冲突文件：
+- 本地二开逻辑是否覆盖上游逻辑：
+- 迁移风险：
 
-- [ ] My code follows the project's code style
-- [ ] I have updated the documentation accordingly
-- [ ] I have added tests for my changes (if applicable)
+## 风险检查
 
-## Additional Notes
+- [ ] 不包含无关格式化、批量重命名或顺手重构
+- [ ] 未直接修改敏感日志输出，或已确认不会泄露私钥 / 签名材料 / 敏感配置
+- [ ] 涉及外部 API / 链节点调用时，已包含异常处理和超时设置
+- [ ] 涉及金额、订单状态、nonce、回调、充值、链上扫描、签名或私钥逻辑时，已说明并发安全策略
+- [ ] 涉及 Django / DRF 路由时，未新增带尾部 `/` 的 URL
 
-Any deployment considerations, migration steps, or config changes needed?
+## 数据库迁移
+
+- [ ] 不涉及数据库迁移
+- [ ] 涉及迁移，且已检查是否收窄数据合法域
+- [ ] 收窄约束前已通过 `RunPython` 幂等归一化存量数据
+- [ ] 需要 migration linter 豁免时，已使用 `IgnoreMigration()` 定点说明
+- [ ] 无法机械归一化的数据冲突，未在本次迁移中直接加硬约束
+
+## 验证结果
+
+请填写实际执行过的命令和结果；未执行的项目请说明原因。
+
+- [ ] `uv run ruff check .`
+- [ ] `uv run mypy .`
+- [ ] `uv run pytest -q`
+- [ ] `uv run pre-commit run --all-files`
+- [ ] Docker Compose 部署 / 启动验证
+- [ ] API 端点验证
+- [ ] 链交互验证
+
+## 交付说明
+
+- 配置变化：
+- 部署注意事项：
+- 回滚要点：
+- 其他说明：

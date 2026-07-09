@@ -18,6 +18,30 @@
 - **xcash 仓库**：`/Users/void/PycharmProjects/xcash`（本项目，Django 5.2）
 - **xcash-saas 仓库**：`/Users/void/PycharmProjects/xcash-saas`（Django 5.2 + DRF）
 
+## Fork 二开维护规范
+
+- 本仓库是基于 `xca-sh/xcash` 的长期二开主线；`origin/main` 是本项目稳定产品主线，必须保持可部署、可回滚。
+- 原仓库远端统一命名为 `upstream`，地址为 `git@github.com:xca-sh/xcash.git`；`upstream/main` 只作为上游输入，不直接在其上开发。
+- 二开功能和修复优先从 `main` 拉短分支，命名建议：
+  - `feat/xxx`：新增功能
+  - `fix/xxx`：缺陷修复
+  - `hotfix/xxx`：紧急修复
+  - `sync/upstream-YYYY-MM-DD`：同步原仓库专用分支
+- 不维护长期 `develop` / `dev` 分支，避免增加上游同步成本；`main` 作为唯一长期主线。
+- 合并原仓库时必须使用独立 `sync/upstream-YYYY-MM-DD` 分支，不得在同步分支夹带本地新功能或无关重构。
+- 同步上游默认使用 merge，不对已推送的 `main` 做 rebase，避免重写长期维护历史。
+- 上游同步标准流程：
+  1. `git switch main`
+  2. `git pull --ff-only origin main`
+  3. `git fetch upstream --tags`
+  4. `git switch -c sync/upstream-YYYY-MM-DD`
+  5. `git merge --no-ff upstream/main`
+  6. 处理冲突并完成验证后，再合回 `main`
+- 上游同步提交或 PR 必须记录：上游 commit/tag、冲突文件、本地二开逻辑是否覆盖上游逻辑、迁移风险、验证命令和结果。
+- 二开应尽量通过新增 service、adapter、配置层或独立模块扩展，减少直接修改上游热点文件；必须修改热点文件时，在 PR 说明中写明原因。
+- 涉及金额、订单状态、nonce、回调、充值、链上扫描、签名、私钥相关逻辑的改动，必须补充行为测试并说明并发安全策略。
+- 版本发布建议使用 `v上游版本-han.N` 形式，例如 `v0.5.1-han.1`，发布说明需记录基准上游版本、迁移影响、配置变化、验证结果和回滚要点。
+
 ## 测试要求
 
 - 只为核心业务逻辑、状态流转、并发安全、金额计算、外部接口异常处理等“行为正确性”编写测试。
